@@ -13,7 +13,10 @@ use GlobalPayments\Api\Entities\{
     HPPNotifications,
     Address,
     HPPDisplayConfiguration,
-    PhoneNumber
+    PhoneNumber,
+    Transaction,
+    InstallmentsConfiguration,
+    InstallmentsTerms
 };
 use GlobalPayments\Api\Entities\Enums\{
     PayByLinkType,
@@ -24,7 +27,8 @@ use GlobalPayments\Api\Entities\Enums\{
     ExemptStatus,
     HPPTypes,
     HPPFunctions,
-    TransactionType
+    TransactionType,
+    InstallmentsFundingMode
 };
 use GlobalPayments\Api\Entities\Exceptions\ArgumentException;
 use GlobalPayments\Api\Services\HPPService;
@@ -36,35 +40,35 @@ class HPPBuilder extends AuthorizationBuilder
     /**
      * @var HPPData
      */
-    private $HPPData;
+    private HPPData $HPPData;
     /**
      * @var PayerDetails
      */
-    private $payer;
+    private PayerDetails $payer;
     /**
      * @var HPPOrder
      */
-    private $order;
+    private HPPOrder $order;
     /**
      * @var HPPNotifications
      */
-    private $notifications;
+    private HPPNotifications $notifications;
     /**
      * @var HPPTransactionConfiguration
      */
-    private $transactionConfig;
+    private HPPTransactionConfiguration $transactionConfig;
     /**
      * @var HPPPaymentMethodConfiguration
      */
-    private $paymentMethodConfig;
+    private HPPPaymentMethodConfiguration $paymentMethodConfig;
     /**
      * @var HPPAuthenticationConfiguration
      */
-    private $authConfig;
+    private HPPAuthenticationConfiguration $authConfig;
     /**
      * @var HPPApmConfiguration
      */
-    private $apmConfig;
+    private HPPApmConfiguration $apmConfig;
 
     public function __construct()
     {
@@ -85,7 +89,7 @@ class HPPBuilder extends AuthorizationBuilder
      * @param array $providers Array of provider strings (e.g., ['googlepay', 'applepay'])
      * @return HPPBuilder this
      */
-    public function withDigitalWallets(array $providers): self
+    public function withDigitalWallets(array $providers): static
     {
         $this->paymentMethodConfig->digitalWallets = [
             'provider' => $providers
@@ -109,7 +113,7 @@ class HPPBuilder extends AuthorizationBuilder
      * @param string $name
      * @return HPPBuilder
      */
-    public function withName(string $name): self
+    public function withName(string $name): static
     {
         $this->HPPData->name = $name;
         return $this;
@@ -121,7 +125,7 @@ class HPPBuilder extends AuthorizationBuilder
     * @param string $description
     * @return HPPBuilder this
     */
-    public function withDescription($description): self
+    public function withDescription($description): static
     {
         $this->HPPData->description = $description;
         return $this;
@@ -133,7 +137,7 @@ class HPPBuilder extends AuthorizationBuilder
      * @param string $reference
      * @return HPPBuilder this
      */
-    public function withReference(string $reference): self
+    public function withReference(string $reference): static
     {
         $this->HPPData->reference = $reference;
         return $this;
@@ -145,7 +149,7 @@ class HPPBuilder extends AuthorizationBuilder
      * @param string $expirationDate
      * @return HPPBuilder this
      */ 
-    public function withExpirationDate(string $expirationDate): self
+    public function withExpirationDate(string $expirationDate): static
     {
         $this->HPPData->expirationDate = $expirationDate;
         return $this;
@@ -159,7 +163,7 @@ class HPPBuilder extends AuthorizationBuilder
      * @return HPPBuilder this
      */
     
-    public function withImage(string $base64Content): self
+    public function withImage(string $base64Content): static
     {
         if (empty($base64Content)) {
             throw new ArgumentException('Base64 image content is required');
@@ -180,7 +184,7 @@ class HPPBuilder extends AuthorizationBuilder
      * @return HPPBuilder this
      * 
      */
-    public function withPayer(PayerDetails $payer): self
+    public function withPayer(PayerDetails $payer): static
     {
 
         if (empty($payer->firstName) || empty($payer->lastName) || empty($payer->email)) {
@@ -207,7 +211,7 @@ class HPPBuilder extends AuthorizationBuilder
      * @param PhoneNumber $phone
      * @return HPPBuilder this
      */
-    public function withPayerPhone(PhoneNumber $phone): self
+    public function withPayerPhone(PhoneNumber $phone): static
     {
         $this->payer->mobilePhone = $phone;
         return $this;
@@ -219,7 +223,7 @@ class HPPBuilder extends AuthorizationBuilder
      * @param Address $address The billing address object
      * @return HPPBuilder this
      */
-    public function withBillingAddress(Address $address): self
+    public function withBillingAddress(Address $address): static
     {
         $this->payer->billingAddress = $address;
         return $this;
@@ -231,7 +235,7 @@ class HPPBuilder extends AuthorizationBuilder
      * @param Address $address The shipping address object
      * @return HPPBuilder this
      */
-    public function withShippingAddress(Address $address): self
+    public function withShippingAddress(Address $address): static
     {
         $this->order->shippingAddress = $address;
         return $this;
@@ -243,7 +247,7 @@ class HPPBuilder extends AuthorizationBuilder
      * @param PhoneNumber $phone The shipping phone number object
      * @return HPPBuilder this
      */
-    public function withShippingPhone(PhoneNumber $phone): self
+    public function withShippingPhone(PhoneNumber $phone): static
     {
         $this->order->shippingPhone = $phone;
         return $this;
@@ -255,7 +259,7 @@ class HPPBuilder extends AuthorizationBuilder
      * @param bool $indicator true if the addresses match, false if they do not
      * @return HPPBuilder this
      */
-    public function withAddressMatchIndicator($indicator): self
+    public function withAddressMatchIndicator(bool $indicator): static
     {
         $this->payer->addressMatchIndicator = StringUtils::boolToYesNo($indicator);
         return $this;
@@ -266,7 +270,7 @@ class HPPBuilder extends AuthorizationBuilder
      * @throws ArgumentException When the amount is not a number or its a negative number
      * @return HPPBuilder this
      */
-    public function withAmount( $amount ): self
+    public function withAmount($amount): static
     {
         if (!is_numeric($amount) || floatval($amount) <= 0) {
             throw new ArgumentException('Issue with the amount, it must be a positive number');
@@ -283,7 +287,7 @@ class HPPBuilder extends AuthorizationBuilder
      * @throws ArgumentException When the currency code is not 3 characters
      * @return HPPBuilder this
      */
-    public function withCurrency( $currency ): self
+    public function withCurrency($currency): static
     {
         if (strlen($currency) !== 3) {
             throw new ArgumentException('Currency must be a 3-character code');
@@ -298,7 +302,7 @@ class HPPBuilder extends AuthorizationBuilder
      * @param string $reference
      * @return HPPBuilder this
      */
-    public function withOrderReference(string $reference): self
+    public function withOrderReference(string $reference): static
     {
         $this->order->reference = $reference;
         return $this;
@@ -322,7 +326,7 @@ class HPPBuilder extends AuthorizationBuilder
         array $allowedPaymentMethods = ['CARD'],
         PaymentMethodUsageMode|string $usageMode = PaymentMethodUsageMode::SINGLE,
         string $usageLimit = '1'
-    ): self
+    ): static
     {
         $this->transactionConfig->channel = $channel;
         $this->transactionConfig->country = $country;
@@ -348,7 +352,7 @@ class HPPBuilder extends AuthorizationBuilder
      * @param bool $currencyConversionMode true to enable, false to disable
      * @return HPPBuilder this
      */
-    public function withCurrencyConversionMode($currencyConversionMode): self
+    public function withCurrencyConversionMode(bool $currencyConversionMode): static
     {
         $this->transactionConfig->currencyConversionMode = $currencyConversionMode;
         return $this;
@@ -366,8 +370,8 @@ class HPPBuilder extends AuthorizationBuilder
     public function withAuthentication(
         ChallengeRequestIndicator|string $preference = ChallengeRequestIndicator::CHALLENGE_PREFERRED,
         ExemptStatus|string $exemptStatus = ExemptStatus::LOW_VALUE,
-        $billingAddressRequired = true
-    ): self
+        bool $billingAddressRequired = true
+    ): static
     {
         $this->authConfig->preference = ChallengeRequestIndicator::validate($preference);
         $this->authConfig->exemptStatus = ExemptStatus::validate($exemptStatus);
@@ -382,7 +386,7 @@ class HPPBuilder extends AuthorizationBuilder
      * @param HPPStorageModes|string $storageMode
      * @return HPPBuilder this
      */
-    public function withPaymentMethodConfig(HPPStorageModes|string $storageMode = HPPStorageModes::PROMPT): self
+    public function withPaymentMethodConfig(HPPStorageModes|string $storageMode = HPPStorageModes::PROMPT): static
     {
         $this->paymentMethodConfig->storageMode = HPPStorageModes::validate($storageMode);
         return $this;
@@ -397,7 +401,7 @@ class HPPBuilder extends AuthorizationBuilder
      * @return HPPBuilder this
      * 
      */
-    public function withApm($shippingAddressEnabled = true, $addressOverride = true): self
+    public function withApm(bool $shippingAddressEnabled = true, bool $addressOverride = true): static
     {
         // Validate parameters are boolean values
         if (!is_bool($shippingAddressEnabled) || !is_bool($addressOverride)) {
@@ -419,7 +423,7 @@ class HPPBuilder extends AuthorizationBuilder
      * When shippable is true but no shipping amount is provided, or if the shipping amount is not a positive number
      * @return HPPBuilder this
      */
-    public function withShipping($shippable = false, ?string $shippingAmount = null): self
+    public function withShipping(bool $shippable = false, ?string $shippingAmount = null): static
     {
         if (!is_bool($shippable)) {
             throw new ArgumentException('Shippable must be a boolean value');
@@ -432,6 +436,48 @@ class HPPBuilder extends AuthorizationBuilder
             }
             $this->HPPData->shippingAmount = $shippingAmount;
         }
+        return $this;
+    }
+
+    /**
+     * Filter installments payment options shown on the external HPP page
+     * 
+     * @param InstallmentsFundingMode|string $fundingMode The installments funding mode
+     * @param string $maxTimeUnitNumber The maximum number of installment months
+     * @param string|null $maxAmount Optional maximum amount for installments plans shown
+     * @throws ArgumentException When validation fails
+     * @return HPPBuilder this
+     */
+    public function withInstallments(
+        InstallmentsFundingMode|string $fundingMode,
+        string $maxTimeUnitNumber,
+        ?string $maxAmount = null
+    ): self
+    {
+        // Validate funding mode
+        if (empty($fundingMode)) {
+            throw new ArgumentException('Installments funding mode is required');
+        }
+
+        //ANY will result in an API error
+        if("ANY" === $fundingMode){
+            $fundingMode = "";
+        }
+
+        // Validate max time unit number
+        if (!is_numeric($maxTimeUnitNumber) || (int)$maxTimeUnitNumber <= 0) {
+            throw new ArgumentException('Max time unit number must be a positive integer');
+        }
+
+        // Validate max amount if provided
+        if ($maxAmount !== null && (!is_numeric($maxAmount) || (int)$maxAmount <= 0)) {
+            throw new ArgumentException('Max amount must be a positive integer in minor units');
+        }
+
+        // Create installments configuration
+        $terms = new InstallmentsTerms($maxTimeUnitNumber, $maxAmount);
+        $this->HPPData->installments = new InstallmentsConfiguration($fundingMode, $terms);
+
         return $this;
     }
 
@@ -465,7 +511,7 @@ class HPPBuilder extends AuthorizationBuilder
      * @throws ArgumentException When validation fails or when required fields are missing
      * @return PayByLinkResponse Containing the HPP URL
      */
-    public function execute($configName = 'default')
+    public function execute(string $configName = 'default'): Transaction
     {
         $data = $this->build();
         return HPPService::create($data)->execute($configName);
@@ -478,7 +524,7 @@ class HPPBuilder extends AuthorizationBuilder
      * @throws ArgumentException When the type is not a valid or not a HPPTypes enum value
      * @return HPPBuilder this
      */
-    public function withType(HPPTypes|string $type): self
+    public function withType(HPPTypes|string $type): static
     {
         $this->HPPData->type = HPPTypes::validate($type);
         return $this;
@@ -491,7 +537,7 @@ class HPPBuilder extends AuthorizationBuilder
      * @throws ArgumentException When the function parameter is not a valid or not a HPPFunctions enum value
      * @return HPPBuilder this
      */
-    public function withFunction(HPPFunctions|string $function): self
+    public function withFunction(HPPFunctions|string $function): static
     {
         $this->HPPData->function = HPPFunctions::validate($function);
         return $this;
@@ -509,7 +555,7 @@ class HPPBuilder extends AuthorizationBuilder
      * response is posted back as a name/value pair JSON string with the values Base64 encoded. (string)
      * @return HPPBuilder this
      */
-    public function withHPPDisplayConfiguration(string $iframeDimensionsDomain, ?string $iframeResponseDomain = null): self
+    public function withHPPDisplayConfiguration(string $iframeDimensionsDomain, ?string $iframeResponseDomain = null): static
     {
         $displayConfig = new HPPDisplayConfiguration($iframeDimensionsDomain, $iframeResponseDomain);
         $this->HPPData->HPPDisplayConfiguration = $displayConfig->toArray();
@@ -525,7 +571,7 @@ class HPPBuilder extends AuthorizationBuilder
      * @throws ArgumentException When any of the URLs are invaild
      * @return HPPBuilder this
      */
-    public function withNotifications(string $returnUrl, string $statusUrl, string $cancelUrl = ""): self
+    public function withNotifications(string $returnUrl, string $statusUrl, string $cancelUrl = ""): static
     {
         if (!filter_var($returnUrl, FILTER_VALIDATE_URL) || 
             !filter_var($statusUrl, FILTER_VALIDATE_URL) || 
@@ -546,7 +592,7 @@ class HPPBuilder extends AuthorizationBuilder
      * @throws ArgumentException When the email format is invalid
      * @return HPPBuilder this
      */
-    public function withAppEmail(string $appEmail): self
+    public function withAppEmail(string $appEmail): static
     {
         if (!filter_var($appEmail, FILTER_VALIDATE_EMAIL)) {
             throw new ArgumentException('Invalid email format');
@@ -561,7 +607,7 @@ class HPPBuilder extends AuthorizationBuilder
      * @param array $appIds
      * @return HPPBuilder this
      */
-    public function withAppIds(array $appIds): self
+    public function withAppIds(array $appIds): static
     {
         $this->HPPData->appIds = $appIds;
         return $this;
@@ -574,7 +620,7 @@ class HPPBuilder extends AuthorizationBuilder
      * @throws ArgumentException When the URL format is invalid
      * @return HPPBuilder this
      */
-    public function withReferrerUrl(string $referrerUrl): self
+    public function withReferrerUrl(string $referrerUrl): static
     {
         if (!filter_var($referrerUrl, FILTER_VALIDATE_URL)) {
             throw new ArgumentException('Invalid URL format for referrer URL');
@@ -591,7 +637,7 @@ class HPPBuilder extends AuthorizationBuilder
      * @throws ArgumentException When the IP address or subnet mask format is invalid
      * @return HPPBuilder this
      */
-    public function withIpAddress(string $ipAddress, ?string $ipSubnetMask = null): self
+    public function withIpAddress(string $ipAddress, ?string $ipSubnetMask = null): static
     {
         if (!filter_var($ipAddress, FILTER_VALIDATE_IP)) {
             throw new ArgumentException('Invalid IP address format');

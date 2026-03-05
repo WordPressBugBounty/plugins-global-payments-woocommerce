@@ -1,101 +1,105 @@
 <?php
 
+declare(strict_types=1);
 
 namespace GlobalPayments\Api\ServiceConfigs\Gateways;
 
-
 use GlobalPayments\Api\ConfiguredServices;
-use GlobalPayments\Api\Entities\Enums\Environment;
-use GlobalPayments\Api\Entities\Enums\GatewayProvider;
-use GlobalPayments\Api\Entities\Enums\Secure3dVersion;
-use GlobalPayments\Api\Entities\Enums\ServiceEndpoints;
+use GlobalPayments\Api\Entities\Enums\{
+    DataResidency,
+    Environment,
+    GatewayProvider,
+    Secure3dVersion,
+    ServiceEndpoints
+};
 use GlobalPayments\Api\Entities\Exceptions\ConfigurationException;
-use GlobalPayments\Api\Entities\GpApi\GpApiSessionInfo;
-use GlobalPayments\Api\Gateways\GpApiConnector;
-use GlobalPayments\Api\Entities\GpApi\AccessTokenInfo;
-use GlobalPayments\Api\Gateways\IAccessTokenProvider;
+use GlobalPayments\Api\Entities\GpApi\{AccessTokenInfo, GpApiSessionInfo};
+use GlobalPayments\Api\Gateways\{GpApiConnector, IAccessTokenProvider};
 
 class GpApiConfig extends GatewayConfig
 {
-    //GP-API
-    public $appId;
-    public $appKey;
+    public ?string $appId = null;
+    public ?string $appKey = null;
+    public ?string $siteId = null;
+    public ?string $licenseId = null;
+    public ?string $deviceId = null;
+    public ?string $username = null;
+    public ?string $password = null;
+    public ?string $secretApiKey = null;
+    
+    /**
+     * @var AccessTokenInfo
+    */
+    public ?AccessTokenInfo $accessTokenInfo = null;
+    
+    /**
+     * @var string
+    */
+    public string $country = 'US';
 
     /**
-     * @var AccessTokenInfo $accessTokenInfo
-     */
-    public $accessTokenInfo;
-    /**
-     * Country from which the transaction is done from
-     * @var $country string
-     */
-    public $country = 'US';
+     * @var string
+    */
+    public string $dataResidency = DataResidency::NONE;
 
     /**
-     * Transaction channel for GP-API
-     * Can be CP (Card Present) or CNP (Card Not Present)
-     *
-     * @var $channel string
-     */
-    public $channel;
+     * @var string
+    */
+    public ?string $channel = null;
 
     /**
-     * The time left in seconds before the token expires
      * @var int
-     */
-    public $secondsToExpire;
-
-    /**
-     * The time interval set for when the token will expire
-     */
-    public $intervalToExpire;
+    */
+    public ?int $secondsToExpire = null;
 
     /**
      * @var string
-     */
-    public $methodNotificationUrl;
+    */
+    public ?string $intervalToExpire = null;
 
     /**
      * @var string
-     */
-    public $challengeNotificationUrl;
+    */
+    public ?string $methodNotificationUrl = null;
 
     /**
      * @var string
-     */
-    public $merchantContactUrl;
+    */
+    public ?string $challengeNotificationUrl = null;
+
+    /**
+     * @var string
+    */
+    public ?string $merchantContactUrl = null;
 
     /**
      * @var array
-     */
-    public $permissions;
+    */
+    public ?array $permissions = null;
 
     /**
      * @var string
-     */
-    public $gatewayProvider;
-
-    /** @var string */
-    public $merchantId;
+    */
+    public ?string $merchantId = null;
 
     /**
-     * Property used for terminal configuration
      * @var string
-     */
-    public $deviceCurrency;
+    */
+    public ?string $deviceCurrency = null;
 
     /**
-     * The endpoint where the merchant will receive a notification from the API for a specific action/resource (webhook)
      * @var string
-     */
+    */
     public string $statusUrl;
 
     /**
-     * transaction account name used for recurring operation
      * @var string
-     */
+    */
     public string $transactionAccountName;
 
+    /**
+     * @var IAccessTokenProvider
+    */
     public IAccessTokenProvider $accessTokenProvider;
 
     public function __construct()
@@ -106,8 +110,13 @@ class GpApiConfig extends GatewayConfig
     public function configureContainer(ConfiguredServices $services)
     {
         if (empty($this->serviceUrl)) {
-            $this->serviceUrl = ($this->environment == Environment::PRODUCTION) ?
-                ServiceEndpoints::GP_API_PRODUCTION : ServiceEndpoints::GP_API_TEST;
+            if ($this->dataResidency == DataResidency::EU) {
+                $this->serviceUrl = ($this->environment == Environment::PRODUCTION) ?
+                    ServiceEndpoints::GP_API_PRODUCTION_EU : ServiceEndpoints::GP_API_TEST_EU;
+            } else {
+                $this->serviceUrl = ($this->environment == Environment::PRODUCTION) ?
+                    ServiceEndpoints::GP_API_PRODUCTION : ServiceEndpoints::GP_API_TEST;
+            }
         }
         if (!isset($accessTokenProvider)) {
             $this->accessTokenProvider = new GpApiSessionInfo();
@@ -133,14 +142,30 @@ class GpApiConfig extends GatewayConfig
         $services->setSecure3dProvider(Secure3dVersion::TWO, $gateway);
     }
 
-    public function validate()
+    public function validate(): void
     {
         parent::validate();
-        if (
-            empty($this->accessTokenInfo) &&
-            (empty($this->appId) || empty($this->appKey))
-        ) {
-            throw new ConfigurationException('AccessTokenInfo or AppId and AppKey cannot be null');
+        
+        if (!empty($this->accessTokenInfo)) {
+            return;
+        }
+        
+        $hasGpApiCredentials = !empty($this->appId) && !empty($this->appKey);
+        $hasPorticoCredentials = !empty($this->deviceId) && !empty($this->siteId) && 
+            !empty($this->licenseId) && !empty($this->username) && !empty($this->password);
+        $hasSecretApiKey = !empty($this->secretApiKey);
+        
+        if (!$hasGpApiCredentials && !$hasPorticoCredentials && !$hasSecretApiKey) {
+            throw new ConfigurationException(
+                'AccessTokenInfo or (AppId and AppKey) or (Portico 5-point credentials: deviceId, siteId, licenseId, username, password) or SecretApiKey must be provided'
+            );
+        }
+        
+        if ((!empty($this->deviceId) || !empty($this->siteId) || !empty($this->licenseId) || 
+             !empty($this->username) || !empty($this->password)) && !$hasPorticoCredentials) {
+            throw new ConfigurationException(
+                'When using Portico credentials, all 5 fields must be provided: deviceId, siteId, licenseId, username, and password'
+            );
         }
     }
 }

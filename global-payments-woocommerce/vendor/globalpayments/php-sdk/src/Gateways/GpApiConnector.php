@@ -49,7 +49,7 @@ class GpApiConnector extends RestGateway implements IPaymentGateway, ISecure3dPr
     const GP_API_VERSION = '2021-03-22';
     const IDEMPOTENCY_HEADER = 'x-gp-idempotency';
     /**
-     * @var $gpApiConfig GpApiConfig
+     * @var GpApiConfig
      */
     private $gpApiConfig;
     private $accessToken;
@@ -263,7 +263,9 @@ class GpApiConnector extends RestGateway implements IPaymentGateway, ISecure3dPr
                 $request->queryParams
             );
 
-            return GpApiMapping::mapInstallmentResponse($response, $builder->entity);
+            // For FETCH operations, create a new Installment entity
+            $installment = $builder->entity ?? new Installment();
+            return GpApiMapping::mapInstallmentResponse($response, $installment);
         }
 
         return null;
@@ -449,18 +451,31 @@ class GpApiConnector extends RestGateway implements IPaymentGateway, ISecure3dPr
     {
         $this->accessToken = null;
 
+        // Prepare Portico credentials if provided
+        $porticoCredentials = null;
+        if (!empty($this->gpApiConfig->deviceId) || !empty($this->gpApiConfig->siteId) || 
+            !empty($this->gpApiConfig->licenseId) || !empty($this->gpApiConfig->username) || 
+            !empty($this->gpApiConfig->password)) {
+            $porticoCredentials = [
+                'deviceId' => $this->gpApiConfig->deviceId,
+                'siteId' => $this->gpApiConfig->siteId,
+                'licenseId' => $this->gpApiConfig->licenseId,
+                'username' => $this->gpApiConfig->username,
+                'password' => $this->gpApiConfig->password
+            ];
+        }
+
         $request = $this->gpApiConfig->accessTokenProvider->signIn(
             $this->gpApiConfig->appId,
             $this->gpApiConfig->appKey,
             $this->gpApiConfig->secondsToExpire,
             $this->gpApiConfig->intervalToExpire,
-            $this->gpApiConfig->permissions
+            $this->gpApiConfig->permissions,
+            $porticoCredentials,
+            $this->gpApiConfig->secretApiKey
         );
-        try {
-            $response = parent::doTransaction($request->httpVerb, $request->endpoint, $request->requestBody);
-        } catch (GatewayException $gatewayException) {
-            throw $gatewayException;
-        }
+
+        $response = parent::doTransaction($request->httpVerb, $request->endpoint, $request->requestBody);
 
         return new GpApiTokenResponse($response);
     }

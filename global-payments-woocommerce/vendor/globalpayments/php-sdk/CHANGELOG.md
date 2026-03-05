@@ -2,14 +2,70 @@
     <img src="https://developer.globalpay.com/static/media/logo.db1c4126172e20a5c31cf9d5150cc88a.svg" alt="Global Payments logo" title="Global Payments" align="right" width="225" />
 </a>
 
-# Changelog
-## Latest Version v13.4.0 (10/16/25)
+## Latest Version v14.1.6 (03/05/26)
+### Enhancements:
+- [HIGH] Fixed hosted payment data union type
+
+## v14.1.5 (03/03/26)
+### Enhancements:
+- [GPAPI] Added installment id field
+
+## v14.1.4 (02/26/26)
+### Enhancements:
+- [GPAPI] Implement Visa Installments (BNPL) for GP-API
+
+## v14.1.3 (02/19/26)
+### Enhancements:
+- [GPAPI] Added filtering options for installments on the Hosted Payment Page
+
+## v14.1.2 (02/12/26)
+### Enhancements:
+- [GPAPI] Add EU Data Residency Support
+
+## v14.1.1 (01/29/26)
+### Enhancements:
+- [HIGH] Fixed XSS vulnerability by sanitizing HTTP headers in hosted payment page
+
+## v14.1.0 (01/22/26)
+### Enhancements:
+- [PHP8] Add PHP 8 type declarations to class properties for improved type safety
+
+## v14.0.5 (01/08/26)
+### Enhancements:
+- [UPA] Remove HSA/FSA parameter support (removed in UPA v1.60)
+
+## v14.0.4 (12/11/25)
+### Enhancements:
+- Remove Symfony Process component dependency
+
+## Version v14.0.3
+### Enhancements:
+- [Portico] Add EMVChipCondition element support
+- [GPAPI] Enable GP-API access using Portico credentials
+
+## v14.0.2 (11/20/25)
+### Enhancements:
+- [Portico] Bug fix cert endpoint ignored when using production credentials
+
+## v14.0.1 (11/13/25)
+### Enhancements:
+- [GPAPI] Added ContractReference field in Stored Credential
+
+## v14.0.0 (11/06/25)
+### Enhancements:
+- [Rebrand] Replace Heartland branding with Global Payments
+
+## v13.4.1 (10/23/25)
+### Enhancements:
+- Resolved Terminal logging issue
+
+## v13.4.0 (10/16/25)
 ### Enhancements:
 - Updates for enhanced PHP8.4 compatability
 - [UPA] Add DebitTest class for all supported transactions.
 - [UPA] Add new SI missing commands : BalanceInquiry, DeleteSAF, InjectCarouselLogo and RemoveCarouselLogo.
 
-## Latest Version v13.3.9 (10/09/25)
+## v13.3.9 (10/09/25)
 ### Enhancements:
 - [GPAPI] Added Hosted Payment Pages (HPP) integration.
 
@@ -38,7 +94,7 @@
 - [GP-API] - Include merchant ID for recurring operations
 
 ## v13.3.3 (07/29/25)
-### Enhancements:
+###  Enhancements:
 - Security enhancements for some terminal loggers
 - [UPA] - Correct reference mapping
 
@@ -311,7 +367,7 @@ ds_trans_reference,value)
 
 ## v8.0.1 (05/30/23)
 #### Bug Fixes:
-- Portico/Heartland: fix 'AllowDup' flag not included with some CreditReturn transactions
+- Portico/Global Payments: fix 'AllowDup' flag not included with some CreditReturn transactions
 
 ## v8.0.0 (05/23/23)
 #### Enhancements:
@@ -327,7 +383,7 @@ ds_trans_reference,value)
 - Updates on unit tests for: PayLink, 3DS1 and RiskAssessment
 
 #### Bug Fixes:
-- Portico/Heartland: fix to allow CreditAuth transaction type with wallet data
+- Portico/Global Payments: fix to allow CreditAuth transaction type with wallet data
 
 ## v7.0.2 (05/02/23)
 #### Enhancements:
@@ -337,7 +393,7 @@ ds_trans_reference,value)
 
 ## v7.0.1 (04/04/23)
 #### Enhancements:
-- Portico/Heartland: improvements to transaction request building logic
+- Portico/Global Payments: improvements to transaction request building logic
 - GP-API: Unit tests update on fraud management and APMs
 - GP-ECOM: Unit test update on 3DS
 
@@ -355,11 +411,11 @@ ds_trans_reference,value)
 
 ## v6.1.6 (03/07/23)
 #### Bug Fixes:
-- Portico/Heartland: fix 'withStartDate()' reporting method
+- Portico/Global Payments: fix 'withStartDate()' reporting method
 
 #### Enhancements:
-- Portico/Heartland: improvements to GooglePay and ApplePay token handling
-- Portico/Heartland: simple GooglePay example added
+- Portico/Global Payments: improvements to GooglePay and ApplePay token handling
+- Portico/Global Payments: simple GooglePay example added
 
 ## v6.1.5 (02/28/23)
 #### Bug Fixes:

@@ -10,6 +10,7 @@ use GlobalPayments\Api\Entities\{Address,
     EcommerceInfo,
     FraudRuleCollection,
     HostedPaymentData,
+    HPPData,
     PhoneNumber,
     StoredCredential,
     InstallmentData,
@@ -47,7 +48,7 @@ class AuthorizationBuilder extends TransactionBuilder
      * @internal
      * @var string
      */
-    public $alias;
+    public ?string $alias = null;
 
     /**
      * Request alias action
@@ -55,7 +56,7 @@ class AuthorizationBuilder extends TransactionBuilder
      * @internal
      * @var AliasAction
      */
-    public $aliasAction;
+    public mixed $aliasAction = null;
 
     /**
      * Request should allow duplicates
@@ -63,7 +64,7 @@ class AuthorizationBuilder extends TransactionBuilder
      * @internal
      * @var bool
      */
-    public $allowDuplicates;
+    public ?bool $allowDuplicates = null;
 
     /**
      * Request should allow partial authorizations
@@ -71,7 +72,7 @@ class AuthorizationBuilder extends TransactionBuilder
      * @internal
      * @var bool
      */
-    public $allowPartialAuth;
+    public ?bool $allowPartialAuth = null;
 
     /**
      * Request amount
@@ -79,10 +80,10 @@ class AuthorizationBuilder extends TransactionBuilder
      * @internal
      * @var string|float
      */
-    public $amount;
+    public string|float|null $amount = null;
 
     /** @var bool */
-    public $amountEstimated;
+    public ?bool $amountEstimated = null;
 
     /**
      * Request authorization amount
@@ -90,17 +91,17 @@ class AuthorizationBuilder extends TransactionBuilder
      * @internal
      * @var string|float
      */
-    public $authAmount;
+    public string|float|null $authAmount = null;
 
     /** @var AutoSubstantiation */
-    public $autoSubstantiation;
+    public ?AutoSubstantiation $autoSubstantiation = null;
 
     /**
      * Balance inquiry type
      * @internal
      * @var InquiryType
      */
-    public $balanceInquiryType;
+    public mixed $balanceInquiryType = null;
 
     /**
      * Request billing address
@@ -108,7 +109,7 @@ class AuthorizationBuilder extends TransactionBuilder
      * @internal
      * @var Address
      */
-    public $billingAddress;
+    public ?Address $billingAddress = null;
 
     /**
      * Indicates Card On File transaction
@@ -116,7 +117,7 @@ class AuthorizationBuilder extends TransactionBuilder
      * @internal
      * @var bool
      */
-    public $cardOnFile;
+    public ?bool $cardOnFile = null;
 
     /**
      * Request cashback amount
@@ -124,7 +125,7 @@ class AuthorizationBuilder extends TransactionBuilder
      * @internal
      * @var string|float
      */
-    public $cashBackAmount;
+    public string|float|null $cashBackAmount = null;
 
     /**
      * Request commercial data
@@ -132,7 +133,7 @@ class AuthorizationBuilder extends TransactionBuilder
      * @internal
      * @var CommercialData
      */
-    public $commercialData;
+    public mixed $commercialData = null;
 
     /**
      * Request currency
@@ -140,7 +141,7 @@ class AuthorizationBuilder extends TransactionBuilder
      * @internal
      * @var string
      */
-    public $currency;
+    public ?string $currency = null;
 
     /**
      * Request customer ID
@@ -148,7 +149,7 @@ class AuthorizationBuilder extends TransactionBuilder
      * @internal
      * @var string|float
      */
-    public $customerId;
+    public string|float|null $customerId = null;
 
     /**
      * Request customer IP address
@@ -156,7 +157,7 @@ class AuthorizationBuilder extends TransactionBuilder
      * @internal
      * @var string|float
      */
-    public $customerIpAddress;
+    public string|float|null $customerIpAddress = null;
 
     /**
      * Request customer Data
@@ -164,7 +165,7 @@ class AuthorizationBuilder extends TransactionBuilder
      * @internal
      * @var Customer
      */
-    public $customerData;
+    public ?Customer $customerData = null;
 
     /**
      * Request customData
@@ -172,7 +173,7 @@ class AuthorizationBuilder extends TransactionBuilder
      * @internal
      * @var array<string>
      */
-    public $customData;
+    public array|string|null $customData = null;
 
     /**
      * Payment method CVN
@@ -182,7 +183,7 @@ class AuthorizationBuilder extends TransactionBuilder
      * @internal
      * @var string
      */
-    public $cvn;
+    public ?string $cvn = null;
 
     /**
      * Request description
@@ -190,7 +191,7 @@ class AuthorizationBuilder extends TransactionBuilder
      * @internal
      * @var string
      */
-    public $description;
+    public ?string $description = null;
 
     /**
      * Request decisionManager
@@ -198,7 +199,7 @@ class AuthorizationBuilder extends TransactionBuilder
      * @internal
      * @var DecisionManager
      */
-    public $decisionManager;
+    public ?DecisionManager $decisionManager = null;
 
     /**
      * Request dynamic descriptor
@@ -206,7 +207,7 @@ class AuthorizationBuilder extends TransactionBuilder
      * @internal
      * @var string
      */
-    public $dynamicDescriptor;
+    public ?string $dynamicDescriptor = null;
 
     /**
      * Request ecommerceInfo
@@ -214,7 +215,7 @@ class AuthorizationBuilder extends TransactionBuilder
      * @internal
      * @var EcommerceInfo
      */
-    public $ecommerceInfo;
+    public ?EcommerceInfo $ecommerceInfo = null;
 
     /**
      * Request gratuity
@@ -222,12 +223,12 @@ class AuthorizationBuilder extends TransactionBuilder
      * @internal
      * @var string|amount
      */
-    public $gratuity;
+    public string|float|null $gratuity = null;
 
     /**
      * @var ?float
      */
-    public $convenienceAmount;
+    public ?float $convenienceAmount = null;
 
     /**
      * Request shipping amount
@@ -235,33 +236,33 @@ class AuthorizationBuilder extends TransactionBuilder
      * @internal
      * @var string|amount
      */
-    public $shippingAmount;
+    public string|float|null $shippingAmount = null;
 
     /** @var string|float */
-    public $shippingDiscount;
+    public string|float|null $shippingDiscount = null;
 
     /** @var OrderDetails */
-    public $orderDetails;
+    public ?OrderDetails $orderDetails = null;
 
     /**
      * @internal
      * @var StoredCredential
      */
-    public $storedCredential;
+    public ?StoredCredential $storedCredential = null;
 
     /**
      * @internal
      * @var InstallmentData
      */
-    public $installment;
+    public ?InstallmentData $installment = null;
 
     /**
      * Request hosted payment data
      *
      * @internal
-     * @var HostedPaymentData
+     * @var HostedPaymentData|HPPData
      */
-    public $hostedPaymentData;
+    public HostedPaymentData|HPPData|null $hostedPaymentData = null;
 
     /**
      * Request invoice number
@@ -269,7 +270,15 @@ class AuthorizationBuilder extends TransactionBuilder
      * @internal
      * @var string|float
      */
-    public $invoiceNumber;
+    public string|float|null $invoiceNumber = null;
+
+    /**
+     * Request contract reference
+     *
+     * @internal
+     * @var string
+     */
+    public ?string $contractReference = null;
 
     /**
      * Request should request Level II
@@ -277,7 +286,7 @@ class AuthorizationBuilder extends TransactionBuilder
      * @internal
      * @var bool
      */
-    public $level2Request;
+    public ?bool $level2Request = null;
 
     /**
      * Request offline authorization code
@@ -285,7 +294,7 @@ class AuthorizationBuilder extends TransactionBuilder
      * @internal
      * @var string
      */
-    public $offlineAuthCode;
+    public ?string $offlineAuthCode = null;
 
     /**
      * Request should be considered one-time
@@ -295,7 +304,7 @@ class AuthorizationBuilder extends TransactionBuilder
      * @internal
      * @var bool
      */
-    public $oneTimePayment;
+    public ?bool $oneTimePayment = null;
 
     /**
      * Request order ID
@@ -303,7 +312,7 @@ class AuthorizationBuilder extends TransactionBuilder
      * @internal
      * @var string|float
      */
-    public $orderId;
+    public string|float|null $orderId = null;
 
     /**
      * Request product Data
@@ -311,7 +320,7 @@ class AuthorizationBuilder extends TransactionBuilder
      * @internal
      * @var array<string>
      */
-    public $productData;
+    public ?array $productData = null;
 
     /**
      * Request product ID
@@ -319,7 +328,7 @@ class AuthorizationBuilder extends TransactionBuilder
      * @internal
      * @var string|float
      */
-    public $productId;
+    public string|float|null $productId = null;
 
     /**
      * Request recurring sequence
@@ -327,7 +336,7 @@ class AuthorizationBuilder extends TransactionBuilder
      * @internal
      * @var RecurringSequence
      */
-    public $recurringSequence;
+    public mixed $recurringSequence = null;
 
     /**
      * Request recurring type
@@ -335,7 +344,7 @@ class AuthorizationBuilder extends TransactionBuilder
      * @internal
      * @var RecurringType
      */
-    public $recurringType;
+    public mixed $recurringType = null;
 
     /**
      * Request should request multi-use token
@@ -343,7 +352,7 @@ class AuthorizationBuilder extends TransactionBuilder
      * @internal
      * @var bool
      */
-    public $requestMultiUseToken;
+    public ?bool $requestMultiUseToken = null;
 
     /**
      * Used in conjunction with $requestMultiUseToken to request a unique token
@@ -361,7 +370,7 @@ class AuthorizationBuilder extends TransactionBuilder
      * @internal
      * @var Date
      */
-    public $lastRegisteredDate;
+    public mixed $lastRegisteredDate = null;
 
     /**
      * Request replacement gift card
@@ -369,7 +378,7 @@ class AuthorizationBuilder extends TransactionBuilder
      * @internal
      * @var GiftCard
      */
-    public $replacementCard;
+    public ?GiftCard $replacementCard = null;
 
     /**
      * Request schedule ID
@@ -379,7 +388,7 @@ class AuthorizationBuilder extends TransactionBuilder
      * @internal
      * @var string
      */
-    public $scheduleId;
+    public ?string $scheduleId = null;
 
     /**
      * Request shipping address
@@ -387,7 +396,7 @@ class AuthorizationBuilder extends TransactionBuilder
      * @internal
      * @var Address
      */
-    public $shippingAddress;
+    public ?Address $shippingAddress = null;
 
     /**
      * Request timestamp
@@ -395,7 +404,7 @@ class AuthorizationBuilder extends TransactionBuilder
      * @internal
      * @var string|float
      */
-    public $timestamp;
+    public string|float|null $timestamp = null;
 
     /**
      * DCC rate Data
@@ -403,7 +412,7 @@ class AuthorizationBuilder extends TransactionBuilder
      * @internal
      * @var dccRateData
      */
-    public $dccRateData;
+    public ?DccRateData $dccRateData = null;
 
     /**
      * Fraud Filter
@@ -413,12 +422,12 @@ class AuthorizationBuilder extends TransactionBuilder
      * @internal
      * @var string
      */
-    public $fraudFilter;
+    public mixed $fraudFilter = null;
 
     /**
      * @var FraudRuleCollection
      */
-    public $fraudRules;
+    public mixed $fraudRules = null;
 
     /**
      * For AVS (Address verification System) request
@@ -426,7 +435,7 @@ class AuthorizationBuilder extends TransactionBuilder
      * @internal
      * @var bool
      */
-    public $verifyAddress;
+    public string|bool|null $verifyAddress = null;
 
     /**
      * For TransIT cash amount for a specified transaction
@@ -436,7 +445,7 @@ class AuthorizationBuilder extends TransactionBuilder
      * @internal
      * @var string
      */
-    public $cashTendered;
+    public ?string $cashTendered = null;
 
     /**
      * For TransIT transaction discount details
@@ -444,21 +453,21 @@ class AuthorizationBuilder extends TransactionBuilder
      * @internal
      * @var string
      */
-    public $discountDetails;
+    public ?string $discountDetails = null;
 
     /*
      * Card on File field
      * @var string
      *
      */
-    public $cardBrandTransactionId;
+    public ?string $cardBrandTransactionId = null;
 
     /*
      * Card on File field
      * @var string
      *
      */
-    public $transactionInitiator;
+    public ?string $transactionInitiator = null;
 
     /**
      * Used with some stored-credential transactions
@@ -470,82 +479,85 @@ class AuthorizationBuilder extends TransactionBuilder
     /**
      * @var string $tagData
      */
-    public $tagData;
+    public ?string $tagData = null;
 
     /**
      * @var string $idempotencyKey
      */
-    public $idempotencyKey;
+    public ?string $idempotencyKey = null;
 
     /**
      * @var EmvLastChipRead $emvLastChipRead
      */
-    public $emvLastChipRead;
+    public ?EmvLastChipRead $emvLastChipRead = null;
 
     /**
      * @var string $paymentApplicationVersion
      */
-    public $paymentApplicationVersion;
+    public ?string $paymentApplicationVersion = null;
 
     /**
      * @var EmvFallbackCondition $emvFallbackCondition
      */
-    public $emvFallbackCondition;
+    public ?EmvFallbackCondition $emvFallbackCondition = null;
 
     /**
      * @var EmvLastChipRead $emvChipCondition
      */
-    public $emvChipCondition;
+    public ?EmvLastChipRead $emvChipCondition = null;
 
     /**
      * @var float $surchargeAmount
      */
-    public $surchargeAmount;
+    public ?float $surchargeAmount = null;
 
     /** @var PaymentMethodUsageMode $paymentMethodUsageMode */
-    public $paymentMethodUsageMode;
+    public mixed $paymentMethodUsageMode = null;
 
     /** @var PhoneNumber */
-    public $homePhone;
+    public ?PhoneNumber $homePhone = null;
 
     /** @var PhoneNumber */
-    public $workPhone;
+    public ?PhoneNumber $workPhone = null;
 
     /** @var PhoneNumber */
-    public $shippingPhone;
+    public ?PhoneNumber $shippingPhone = null;
 
     /** @var RemittanceReferenceType */
-    public $remittanceReferenceType;
+    public mixed $remittanceReferenceType = null;
 
     /** @var string */
-    public $remittanceReferenceValue;
+    public ?string $remittanceReferenceValue = null;
 
     /** @var BNPLShippingMethod */
-    public $bnplShippingMethod;
+    public ?BNPLShippingMethod $bnplShippingMethod = null;
 
     /** @var boolean */
-    public $maskedDataResponse;
+    public ?bool $maskedDataResponse = null;
 
     public BlockedCardType $cardTypesBlocking;
 
     /** @var MerchantCategory */
-    public string $merchantCategory;
+    public mixed $merchantCategory = null;
 
     /** @var string|CreditDebitIndicator */
     public string $creditDebitIndicator;
 
     /** @var ?array */
-    public $bills;
+    public ?array $bills = null;
 
     /** @var string */
     public string $clerkId;
+
+    /** @var string */
+    public ?string $shippingDate = null;
 
     /**
      * 
      * @param TransactionType $type Request transaction type
      * @param ?IPaymentMethod $paymentMethod Request payment method
      */
-    public function __construct($type, ?IPaymentMethod $paymentMethod = null)
+    public function __construct(TransactionType|string $type, ?IPaymentMethod $paymentMethod = null)
     {
         parent::__construct($type, $paymentMethod);
         $this->withPaymentMethod($paymentMethod);
@@ -557,7 +569,7 @@ class AuthorizationBuilder extends TransactionBuilder
      *
      * @return Transaction
      */
-    public function execute($configName = 'default')
+    public function execute(string $configName = 'default'): Transaction
     {
         parent::execute($configName);
 
@@ -577,7 +589,7 @@ class AuthorizationBuilder extends TransactionBuilder
      *
      * @return String
      */
-    public function serialize($configName = 'default')
+    public function serialize(string $configName = 'default'): string
     {
         $this->transactionModifier = TransactionModifier::HOSTEDREQUEST;
         parent::execute();
@@ -596,7 +608,7 @@ class AuthorizationBuilder extends TransactionBuilder
      *
      * @return void
      */
-    protected function setupValidations()
+    protected function setupValidations(): void
     {
         $this->validations->of(
             TransactionType::AUTH |
@@ -676,7 +688,7 @@ class AuthorizationBuilder extends TransactionBuilder
      *
      * @return AuthorizationBuilder
      */
-    public function withAddress(Address $address, $type = AddressType::BILLING)
+    public function withAddress(Address $address, AddressType|string $type = AddressType::BILLING): self
     {
         $address->type = $type;
         if ($type === AddressType::BILLING) {
@@ -696,7 +708,7 @@ class AuthorizationBuilder extends TransactionBuilder
      * @return AuthorizationBuilder
      * @internal
      */
-    public function withAlias($aliasAction, $alias)
+    public function withAlias(AliasAction|string $aliasAction, string $alias): self
     {
         $this->aliasAction = $aliasAction;
         $this->alias = $alias;
@@ -710,7 +722,7 @@ class AuthorizationBuilder extends TransactionBuilder
      *
      * @return AuthorizationBuilder
      */
-    public function withAllowDuplicates($allowDuplicates)
+    public function withAllowDuplicates($allowDuplicates): self
     {
         $this->allowDuplicates = $allowDuplicates;
         return $this;
@@ -723,7 +735,7 @@ class AuthorizationBuilder extends TransactionBuilder
      *
      * @return AuthorizationBuilder
      */
-    public function withAllowPartialAuth($allowPartialAuth)
+    public function withAllowPartialAuth(bool $allowPartialAuth): self
     {
         $this->allowPartialAuth = $allowPartialAuth;
         return $this;
@@ -736,14 +748,14 @@ class AuthorizationBuilder extends TransactionBuilder
      *
      * @return AuthorizationBuilder
      */
-    public function withAmount($amount)
+    public function withAmount(string|float|null $amount): self
     {
         $this->amount = $amount;
         return $this;
     }
 
     /** @return AuthorizationBuilder */
-    public function withAmountEstimated($value)
+    public function withAmountEstimated(bool $value): self
     {
         $this->amountEstimated = $value;
         return $this;
@@ -756,7 +768,7 @@ class AuthorizationBuilder extends TransactionBuilder
      *
      * @return AuthorizationBuilder
      */
-    public function withAuthAmount($authAmount)
+    public function withAuthAmount(string|float $authAmount): self
     {
         $this->authAmount = $authAmount;
         return $this;
@@ -769,7 +781,7 @@ class AuthorizationBuilder extends TransactionBuilder
      *
      * @return AuthorizationBuilder
      */
-    public function withAutoSubstantiation($autoSubstantiation)
+    public function withAutoSubstantiation(AutoSubstantiation $autoSubstantiation): self
     {
         $this->autoSubstantiation = $autoSubstantiation;
         return $this;
@@ -782,7 +794,7 @@ class AuthorizationBuilder extends TransactionBuilder
      *
      * @return AuthorizationBuilder
      */
-    public function withCommercialData($commercialData)
+    public function withCommercialData(mixed $commercialData): self
     {
         $this->commercialData = $commercialData;
         return $this;
@@ -795,7 +807,7 @@ class AuthorizationBuilder extends TransactionBuilder
      *
      * @return AuthorizationBuilder
      */
-    public function withBalanceInquiryType($balanceInquiryType)
+    public function withBalanceInquiryType(InquiryType|string $balanceInquiryType): self
     {
         $this->balanceInquiryType = $balanceInquiryType;
         return $this;
@@ -808,7 +820,7 @@ class AuthorizationBuilder extends TransactionBuilder
      *
      * @return AuthorizationBuilder
      */
-    public function withCardOnFile($cardOnFile)
+    public function withCardOnFile(bool $cardOnFile): self
     {
         $this->cardOnFile = $cardOnFile;
         return $this;
@@ -821,7 +833,7 @@ class AuthorizationBuilder extends TransactionBuilder
      *
      * @return AuthorizationBuilder
      */
-    public function withCashBack($cashBackAmount)
+    public function withCashBack(string|float $cashBackAmount): self
     {
         $this->cashBackAmount = $cashBackAmount;
         $this->transactionModifier = TransactionModifier::CASH_BACK;
@@ -835,7 +847,7 @@ class AuthorizationBuilder extends TransactionBuilder
      *
      * @return AuthorizationBuilder
      */
-    public function withClientTransactionId($clientTransactionId)
+    public function withClientTransactionId(string $clientTransactionId): self
     {
         if ($this->transactionType === TransactionType::REVERSAL) {
             if ($this->paymentMethod instanceof TransactionReference) {
@@ -864,7 +876,7 @@ class AuthorizationBuilder extends TransactionBuilder
      *
      * @return AuthorizationBuilder
      */
-    public function withCurrency($currency)
+    public function withCurrency(?string $currency): self
     {
         $this->currency = $currency;
         return $this;
@@ -877,7 +889,7 @@ class AuthorizationBuilder extends TransactionBuilder
      *
      * @return AuthorizationBuilder
      */
-    public function withCustomerId($customerId)
+    public function withCustomerId(string|float $customerId): self
     {
         $this->customerId = $customerId;
         return $this;
@@ -890,7 +902,7 @@ class AuthorizationBuilder extends TransactionBuilder
      *
      * @return AuthorizationBuilder
      */
-    public function withCustomerIpAddress($customerIpAddress)
+    public function withCustomerIpAddress(string|float $customerIpAddress): self
     {
         $this->customerIpAddress = $customerIpAddress;
         return $this;
@@ -903,7 +915,7 @@ class AuthorizationBuilder extends TransactionBuilder
      *
      * @return AuthorizationBuilder
      */
-    public function withCustomerData(Customer $customerData)
+    public function withCustomerData(Customer $customerData): self
     {
         $this->customerData = $customerData;
         if (!empty($customerData->id)) {
@@ -920,7 +932,7 @@ class AuthorizationBuilder extends TransactionBuilder
      *
      * @return AuthorizationBuilder
      */
-    public function withCustomData($customData)
+    public function withCustomData(array|string $customData): self
     {
         $this->customData = $customData;
         return $this;
@@ -933,7 +945,7 @@ class AuthorizationBuilder extends TransactionBuilder
      *
      * @return AuthorizationBuilder
      */
-    public function withDescription($description)
+    public function withDescription(string $description): self
     {
         $this->description = $description;
         return $this;
@@ -946,7 +958,7 @@ class AuthorizationBuilder extends TransactionBuilder
      *
      * @return AuthorizationBuilder
      */
-    public function withDecisionManager(DecisionManager $decisionManager)
+    public function withDecisionManager(DecisionManager $decisionManager): self
     {
         $this->decisionManager = $decisionManager;
         return $this;
@@ -959,7 +971,7 @@ class AuthorizationBuilder extends TransactionBuilder
      *
      * @return AuthorizationBuilder
      */
-    public function withDynamicDescriptor($dynamicDescriptor)
+    public function withDynamicDescriptor(string $dynamicDescriptor): self
     {
         $this->dynamicDescriptor = $dynamicDescriptor;
         return $this;
@@ -972,7 +984,7 @@ class AuthorizationBuilder extends TransactionBuilder
      *
      * @return AuthorizationBuilder
      */
-    public function withGratuity($gratuity)
+    public function withGratuity(string|float $gratuity): self
     {
         $this->gratuity = $gratuity;
         return $this;
@@ -985,7 +997,7 @@ class AuthorizationBuilder extends TransactionBuilder
      *
      * @return AuthorizationBuilder
      */
-    public function withInvoiceNumber($invoiceNumber)
+    public function withInvoiceNumber(string|float $invoiceNumber): self
     {
         $this->invoiceNumber = $invoiceNumber;
         return $this;
@@ -998,7 +1010,7 @@ class AuthorizationBuilder extends TransactionBuilder
      *
      * @return AuthorizationBuilder
      */
-    public function withCommercialRequest($level2or3Request)
+    public function withCommercialRequest(bool $level2or3Request): self
     {
         $this->level2Request = $level2or3Request;
         return $this;
@@ -1011,7 +1023,7 @@ class AuthorizationBuilder extends TransactionBuilder
      *
      * @return AuthorizationBuilder
      */
-    public function withOfflineAuthCode($offlineAuthCode)
+    public function withOfflineAuthCode(string $offlineAuthCode): self
     {
         $this->offlineAuthCode = $offlineAuthCode;
         $this->transactionModifier = TransactionModifier::OFFLINE;
@@ -1028,7 +1040,7 @@ class AuthorizationBuilder extends TransactionBuilder
      *
      * @return AuthorizationBuilder
      */
-    public function withOneTimePayment($value)
+    public function withOneTimePayment(bool $value): self
     {
         $this->oneTimePayment = $value;
         $this->transactionModifier = TransactionModifier::RECURRING;
@@ -1042,7 +1054,7 @@ class AuthorizationBuilder extends TransactionBuilder
      *
      * @return AuthorizationBuilder
      */
-    public function withOrderId($orderId)
+    public function withOrderId(string|float|null $orderId): self
     {
         $this->orderId = $orderId;
         return $this;
@@ -1055,7 +1067,7 @@ class AuthorizationBuilder extends TransactionBuilder
      *
      * @return AuthorizationBuilder
      */
-    public function withPaymentMethod($paymentMethod)
+    public function withPaymentMethod(?IPaymentMethod $paymentMethod): self
     {
         $this->paymentMethod = $paymentMethod;
         if ($paymentMethod instanceof EBTCardData && $paymentMethod->serialNumber !== null) {
@@ -1071,7 +1083,7 @@ class AuthorizationBuilder extends TransactionBuilder
      *
      * @return AuthorizationBuilder
      */
-    public function withProductData($productData)
+    public function withProductData(array $productData): self
     {
         $this->productData = $productData;
         return $this;
@@ -1084,7 +1096,7 @@ class AuthorizationBuilder extends TransactionBuilder
      *
      * @return AuthorizationBuilder
      */
-    public function withProductId($productId)
+    public function withProductId(string|float $productId): self
     {
         $this->productId = $productId;
         return $this;
@@ -1113,7 +1125,7 @@ class AuthorizationBuilder extends TransactionBuilder
      *
      * @return AuthorizationBuilder
      */
-    public function withTransactionId($transactionId)
+    public function withTransactionId(string $transactionId): self
     {
         $this->paymentMethod = new TransactionReference($transactionId);
         return $this;
@@ -1126,7 +1138,7 @@ class AuthorizationBuilder extends TransactionBuilder
      *
      * @return AuthorizationBuilder
      */
-    public function withEcommerceInfo(EcommerceInfo $ecommerceInfo)
+    public function withEcommerceInfo(EcommerceInfo $ecommerceInfo): self
     {
         $this->ecommerceInfo = $ecommerceInfo;
         return $this;
@@ -1139,7 +1151,7 @@ class AuthorizationBuilder extends TransactionBuilder
      *
      * @return AuthorizationBuilder
      */
-    public function withReplacementCard(GiftCard $replacementCard)
+    public function withReplacementCard(GiftCard $replacementCard): self
     {
         $this->replacementCard = $replacementCard;
         return $this;
@@ -1152,7 +1164,7 @@ class AuthorizationBuilder extends TransactionBuilder
      *
      * @return AuthorizationBuilder
      */
-    public function withCvn($cvn)
+    public function withCvn(string|float $cvn): self
     {
         $this->cvn = $cvn;
         return $this;
@@ -1165,7 +1177,7 @@ class AuthorizationBuilder extends TransactionBuilder
      *
      * @return AuthorizationBuilder
      */
-    public function withRecurringInfo($recurringType, $recurringSequence)
+    public function withRecurringInfo(RecurringType|string $recurringType, RecurringSequence|string $recurringSequence): self
     {
         $this->recurringType = $recurringType;
         $this->recurringSequence = $recurringSequence;
@@ -1179,7 +1191,7 @@ class AuthorizationBuilder extends TransactionBuilder
      *
      * @return AuthorizationBuilder
      */
-    public function withDccRateData($value)
+    public function withDccRateData(DccRateData $value): self
     {
         $this->dccRateData = $value;
         return $this;
@@ -1192,7 +1204,7 @@ class AuthorizationBuilder extends TransactionBuilder
      *
      * @return AuthorizationBuilder
      */
-    public function withConvenienceAmount($convenienceAmount)
+    public function withConvenienceAmount(string|float $convenienceAmount): self
     {
         if (!empty($this->convenienceAmount)) {
             $this->convenienceAmount = 0.0;
@@ -1209,7 +1221,7 @@ class AuthorizationBuilder extends TransactionBuilder
      *
      * @return AuthorizationBuilder
      */
-    public function withShippingAmount($shippingAmount)
+    public function withShippingAmount(string|float $shippingAmount): self
     {
         $this->shippingAmount = $shippingAmount;
         return $this;
@@ -1222,7 +1234,7 @@ class AuthorizationBuilder extends TransactionBuilder
      *
      * @return AuthorizationBuilder
      */
-    public function withShippingDiscount($shippingDiscount)
+    public function withShippingDiscount(string|float $shippingDiscount): self
     {
         $this->shippingDiscount = $shippingDiscount;
         return $this;
@@ -1232,7 +1244,7 @@ class AuthorizationBuilder extends TransactionBuilder
      * @param OrderDetails $orderDetails
      * @return AuthorizationBuilder
      */
-    public function withOrderDetails($orderDetails)
+    public function withOrderDetails(OrderDetails $orderDetails): self
     {
         $this->orderDetails = $orderDetails;
         return $this;
@@ -1242,7 +1254,7 @@ class AuthorizationBuilder extends TransactionBuilder
      * @param StoredCredential $storedCredential
      * @return AuthorizationBuilder
      */
-    public function withStoredCredential($storedCredential)
+    public function withStoredCredential(StoredCredential $storedCredential): self
     {
         $this->storedCredential = $storedCredential;
         return $this;
@@ -1260,7 +1272,7 @@ class AuthorizationBuilder extends TransactionBuilder
      *
      * @return $this
      */
-    public function withFraudFilter($fraudFilter, $fraudRules = null)
+    public function withFraudFilter(FraudFilterMode|string $fraudFilter, ?FraudRuleCollection $fraudRules = null): self
     {
         $this->fraudFilter = $fraudFilter;
         if (!empty($fraudRules)) {
@@ -1276,7 +1288,7 @@ class AuthorizationBuilder extends TransactionBuilder
      *
      * @return AuthorizationBuilder
      */
-    public function withVerifyAddress($verifyAddress)
+    public function withVerifyAddress(string|bool $verifyAddress): self
     {
         $this->verifyAddress = $verifyAddress;
         return $this;
@@ -1289,7 +1301,7 @@ class AuthorizationBuilder extends TransactionBuilder
      *
      * @return AuthorizationBuilder
      */
-    public function withTimeStamp($timestamp)
+    public function withTimeStamp(string|float $timestamp): self
     {
         $this->timestamp = $timestamp;
         return $this;
@@ -1298,11 +1310,11 @@ class AuthorizationBuilder extends TransactionBuilder
     /**
      * Set the hostedPaymentData
      *
-     * @param string $hostedPaymentData
+     * @param HostedPaymentData|HPPData $hostedPaymentData
      *
      * @return AuthorizationBuilder
      */
-    public function withHostedPaymentData($hostedPaymentData)
+    public function withHostedPaymentData(HostedPaymentData|HPPData $hostedPaymentData): self
     {
         $this->hostedPaymentData = $hostedPaymentData;
         return $this;
@@ -1315,7 +1327,7 @@ class AuthorizationBuilder extends TransactionBuilder
      *
      * @return AuthorizationBuilder
      */
-    public function withScheduleId($scheduleId)
+    public function withScheduleId(string $scheduleId): self
     {
         $this->scheduleId = $scheduleId;
         return $this;
@@ -1328,7 +1340,7 @@ class AuthorizationBuilder extends TransactionBuilder
      *
      * @return AuthorizationBuilder
      */
-    public function withDiscountDetails($discountDetails)
+    public function withDiscountDetails(string $discountDetails): self
     {
         $this->discountDetails = $discountDetails;
         return $this;
@@ -1341,7 +1353,7 @@ class AuthorizationBuilder extends TransactionBuilder
      *
      * @return AuthorizationBuilder
      */
-    public function withCashTenderedDetails($cashTendered)
+    public function withCashTenderedDetails(string $cashTendered): self
     {
         $this->cashTendered = $cashTendered;
         return $this;
@@ -1376,7 +1388,7 @@ class AuthorizationBuilder extends TransactionBuilder
      *
      * @return AuthorizationBuilder
      */
-    public function withLastRegisteredDate($date)
+    public function withLastRegisteredDate(mixed $date): self
     {
         $this->lastRegisteredDate = $date;
         return $this;
@@ -1406,7 +1418,7 @@ class AuthorizationBuilder extends TransactionBuilder
      *
      * @return AuthorizationBuilder
      */
-    public function withShippingDate($date)
+    public function withShippingDate(string $date): self
     {
         $this->shippingDate = $date;
         return $this;
@@ -1419,7 +1431,7 @@ class AuthorizationBuilder extends TransactionBuilder
      *
      * @return $this
      */
-    public function withTagData($value)
+    public function withTagData(string $value): self
     {
         $this->tagData = $value;
 
@@ -1433,14 +1445,14 @@ class AuthorizationBuilder extends TransactionBuilder
      *
      * @return $this
      */
-    public function withIdempotencyKey($value)
+    public function withIdempotencyKey(string $value): self
     {
         $this->idempotencyKey = $value;
 
         return $this;
     }
 
-    public function hasEmvFallbackData()
+    public function hasEmvFallbackData(): bool
     {
         return (!is_null($this->emvFallbackCondition) || !is_null($this->emvLastChipRead) || !empty($this->paymentApplicationVersion));
     }
@@ -1450,17 +1462,18 @@ class AuthorizationBuilder extends TransactionBuilder
      * @param EmvLastChipRead $lastRead
      * @param string $appVersion
      */
-    public function withEmvFallbackData($condition, $lastRead, $appVersion = null)
+    public function withEmvFallbackData(EmvFallbackCondition|string $condition, EmvLastChipRead|string $lastRead, ?string $appVersion = null): self
     {
         $this->emvFallbackCondition = $condition;
         $this->emvLastChipRead = $lastRead;
         $this->paymentApplicationVersion = $appVersion;
+        return $this;
     }
 
     /**
      * @param EmvLastChipRead $value
      */
-    public function withChipCondition($value)
+    public function withChipCondition(EmvLastChipRead|string $value): self
     {
         $this->emvChipCondition = $value;
 
@@ -1474,7 +1487,7 @@ class AuthorizationBuilder extends TransactionBuilder
      *
      * @return AuthorizationBuilder
      */
-    public function withClerkId($clerkId)
+    public function withClerkId(string|int $clerkId): self
     {
         $this->clerkId = $clerkId;
         return $this;
@@ -1486,7 +1499,7 @@ class AuthorizationBuilder extends TransactionBuilder
      *
      * @return AuthorizationBuilder
      */
-    public function withSurchargeAmount($value, $creditDebitIndicator = null)
+    public function withSurchargeAmount(float $value, string|CreditDebitIndicator|null $creditDebitIndicator = null): self
     {
         $this->surchargeAmount = $value;
         $this->creditDebitIndicator = $creditDebitIndicator;
@@ -1501,7 +1514,7 @@ class AuthorizationBuilder extends TransactionBuilder
      *
      * @return AuthorizationBuilder
      */
-    public function withPaymentMethodUsageMode($value)
+    public function withPaymentMethodUsageMode(PaymentMethodUsageMode|string $value): self
     {
         $this->paymentMethodUsageMode = $value;
 
@@ -1515,7 +1528,7 @@ class AuthorizationBuilder extends TransactionBuilder
      *
      * @return AuthorizationBuilder
      */
-    public function withPhoneNumber($phoneCountryCode, $number, string|PhoneNumberType $type)
+    public function withPhoneNumber(string $phoneCountryCode, string $number, string|PhoneNumberType $type): self
     {
         $phoneNumber = new PhoneNumber($phoneCountryCode, $number, $type);
         switch ($phoneNumber->type) {
@@ -1542,7 +1555,7 @@ class AuthorizationBuilder extends TransactionBuilder
      *
      * @return AuthorizationBuilder
      */
-    public function withRemittanceReference($remittanceReferenceType, $remittanceReferenceValue)
+    public function withRemittanceReference(RemittanceReferenceType|string $remittanceReferenceType, string $remittanceReferenceValue): self
     {
         $this->remittanceReferenceType = $remittanceReferenceType;
         $this->remittanceReferenceValue = $remittanceReferenceValue;
@@ -1556,7 +1569,7 @@ class AuthorizationBuilder extends TransactionBuilder
      * @return $this
      * @throws ArgumentException
      */
-    public function withBNPLShippingMethod($bnpShippingMethod)
+    public function withBNPLShippingMethod(BNPLShippingMethod|string $bnpShippingMethod): self
     {
         if (!$this->paymentMethod instanceof BNPL) {
             throw new ArgumentException("The selected payment method doesn't support this property!");
@@ -1572,7 +1585,7 @@ class AuthorizationBuilder extends TransactionBuilder
      * @param boolean $value
      * @return $this
      */
-    public function withMaskedDataResponse($value)
+    public function withMaskedDataResponse(bool $value): self
     {
         $this->maskedDataResponse = $value;
 
@@ -1594,7 +1607,7 @@ class AuthorizationBuilder extends TransactionBuilder
     /**
      * @param MerchantCategory $merchantCategory
      */
-    public function withMerchantCategory($merchantCategory) : AuthorizationBuilder
+    public function withMerchantCategory(MerchantCategory|string $merchantCategory): self
     {
         $this->merchantCategory = $merchantCategory;
         return $this;
@@ -1603,7 +1616,7 @@ class AuthorizationBuilder extends TransactionBuilder
     /**
      * @param Bill
      */
-    public function withBill(Bill $bill): AuthorizationBuilder
+    public function withBill(Bill $bill): self
     {
         if ($this->bills === null) {
             $this->bills = array();
@@ -1616,7 +1629,7 @@ class AuthorizationBuilder extends TransactionBuilder
     /**
      * @param array<Bill>
      */
-    public function withBills(array $bills): AuthorizationBuilder
+    public function withBills(array $bills): self
     {
         if ($this->bills === null) {
             $this->bills = array();

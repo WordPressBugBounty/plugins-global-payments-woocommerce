@@ -42,14 +42,14 @@ use GlobalPayments\Api\Terminals\PAX\Responses\PaxLocalReportResponse;
 use GlobalPayments\Api\Terminals\PAX\Responses\EBTResponse;
 
 /*
- * Main controller class for Heartland payment application
+ * Main controller class for Global Payments application
  *
  */
 
 class PaxController extends DeviceController
 {
-    public $device;
-    public $deviceConfig;
+    public ?PaxInterface $device = null;
+    public ?ConnectionConfig $deviceConfig = null;
 
     /*
      * Create interface based on connection mode TCP / HTTP

@@ -13,13 +13,19 @@ class InstallmentBuilder extends TransactionBuilder
      * @internal
      * @var IInstallmentEntity
      */
-    public $entity;
+    public mixed $entity = null;
 
     /**
      * @internal
      * @var string
      */
-    public $key;
+    public ?string $key = null;
+
+    /**
+     * @internal
+     * @var null|string
+    */
+    public ?string $installmentId = null;
 
     /**
      * @param TransactionType $type

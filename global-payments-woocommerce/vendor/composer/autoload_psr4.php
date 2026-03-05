@@ -6,7 +6,6 @@ $vendorDir = dirname(__DIR__);
 $baseDir = dirname($vendorDir);
 
 return array(
-    'Symfony\\Component\\Process\\' => array($vendorDir . '/symfony/process'),
     'Psr\\Log\\' => array($vendorDir . '/psr/log/Psr/Log'),
     'GlobalPayments\\WooCommercePaymentGatewayProvider\\' => array($baseDir . '/src'),
     'GlobalPayments\\Api\\' => array($vendorDir . '/globalpayments/php-sdk/src'),

@@ -55,7 +55,7 @@ use GlobalPayments\Api\Utils\Logging\ProtectSensitiveData;
 class GpApiAuthorizationRequestBuilder implements IRequestBuilder
 {
     /** @var AuthorizationBuilder */
-    private $builder;
+    private mixed $builder = null;
 
     private array $maskedValues = [];
 
@@ -64,7 +64,7 @@ class GpApiAuthorizationRequestBuilder implements IRequestBuilder
      *
      * @return bool
      */
-    public static function canProcess($builder = null)
+    public static function canProcess(?BaseBuilder $builder = null): bool
     {
         if ($builder instanceof AuthorizationBuilder) {
             return true;
@@ -78,7 +78,7 @@ class GpApiAuthorizationRequestBuilder implements IRequestBuilder
      * @param GpApiConfig $config
      * @return GpApiRequest|string
      */
-    public function buildRequest(BaseBuilder $builder, $config)
+    public function buildRequest(BaseBuilder $builder, mixed $config): mixed
     {
         $this->builder = $builder;
         $requestData = null;
@@ -426,6 +426,47 @@ class GpApiAuthorizationRequestBuilder implements IRequestBuilder
                     if (!empty($builder->hostedPaymentData->appIds)) {
                         $requestData['app_ids'] = $builder->hostedPaymentData->appIds;
                     }
+                    
+                    // Visa installments configuration
+                    if (!empty($builder->hostedPaymentData->installments)) {
+                        $installments = $builder->hostedPaymentData->installments;
+                        $requestData['installments'] = [];
+                        
+                        if (!empty($installments->funding_mode)) {
+                            $requestData['installments']['funding_mode'] = $installments->funding_mode;
+                        }
+                        
+                        if (!empty($installments->terms)) {
+                            $requestData['installments']['terms'] = [
+                                'max_time_unit_number' => $installments->terms->max_time_unit_number ?? null,
+                                'max_amount' => $installments->terms->max_amount ?? null
+                            ];
+                        }
+                    }
+                    
+                    // Installments filtering configuration (HPP installments filtering feature)
+                    if (
+                        !empty($builder->hostedPaymentData->installments) &&
+                        $builder->hostedPaymentData->installments instanceof \GlobalPayments\Api\Entities\InstallmentsConfiguration
+                    ) {
+                        $installments = $builder->hostedPaymentData->installments;
+                        $requestData['installment'] = [
+                            'funding_mode' => $installments->fundingMode
+                        ];
+
+                        // Add terms if available
+                        if (!empty($installments->terms)) {
+                            $requestData['installment']['terms'] = [];
+
+                            if (!empty($installments->terms->maxTimeUnitNumber)) {
+                                $requestData['installment']['terms']['max_time_unit_number'] = $installments->terms->maxTimeUnitNumber;
+                            }
+
+                            if (!empty($installments->terms->maxAmount)) {
+                                $requestData['installment']['terms']['max_amount'] = $installments->terms->maxAmount;
+                            }
+                        }
+                    }
                 }
                 break;
             default:
@@ -448,7 +489,7 @@ class GpApiAuthorizationRequestBuilder implements IRequestBuilder
         $requestBody['country'] = $config->country;
         $requestBody['payment_method'] = $this->createPaymentMethodParam($builder, $config);
         if (!empty($builder->storedCredential)) {
-            $this->setRequestStoredCredentials($builder->storedCredential, $requestBody);
+            $this->setRequestStoredCredentials($builder->storedCredential, $requestBody, $builder);
         }
 
         return $requestBody;
@@ -512,7 +553,7 @@ class GpApiAuthorizationRequestBuilder implements IRequestBuilder
             $this->setNotificationUrls($requestBody);
         }
         if (!empty($builder->storedCredential)) {
-            $this->setRequestStoredCredentials($builder->storedCredential, $requestBody);
+            $this->setRequestStoredCredentials($builder->storedCredential, $requestBody, $builder, $config);
         }
 
         if (!empty($builder->dccRateData)) {
@@ -522,13 +563,66 @@ class GpApiAuthorizationRequestBuilder implements IRequestBuilder
         }
 
         if (!empty($builder->installment)) {
-            $requestBody['installment'] =  $builder->installment;
+            $installmentData = [];
+            
+            // Basic installment fields
+            if (!empty($builder->installment->id)) {
+                $installmentData['id'] = $builder->installment->id;
+            }
+            if (!empty($builder->installment->reference)) {
+                $installmentData['reference'] = $builder->installment->reference;
+            }
+            if (!empty($builder->installment->program)) {
+                $installmentData['program'] = $builder->installment->program;
+            }
+            if (!empty($builder->installment->mode)) {
+                $installmentData['mode'] = $builder->installment->mode;
+            }
+            if (!empty($builder->installment->count)) {
+                $installmentData['count'] = $builder->installment->count;
+            }
+            if (!empty($builder->installment->grace_period_count)) {
+                $installmentData['grace_period_count'] = $builder->installment->grace_period_count;
+            }
+            
+            // Visa installment fields
+            if (!empty($builder->installment->funding_mode)) {
+                $installmentData['funding_mode'] = $builder->installment->funding_mode;
+            }
+            if (!empty($builder->installment->terms)) {
+                $termsData = [];
+                if (!empty($builder->installment->terms->time_unit)) {
+                    $termsData['time_unit'] = $builder->installment->terms->time_unit;
+                }
+                if (!empty($builder->installment->terms->language)) {
+                    $termsData['language'] = $builder->installment->terms->language;
+                }
+                if (!empty($builder->installment->terms->version)) {
+                    $termsData['version'] = $builder->installment->terms->version;
+                }
+                if (!empty($builder->installment->terms->max_time_unit_number)) {
+                    $termsData['max_time_unit_number'] = $builder->installment->terms->max_time_unit_number;
+                }
+                if (!empty($builder->installment->terms->max_amount)) {
+                    $termsData['max_amount'] = $builder->installment->terms->max_amount;
+                }
+                if (!empty($termsData)) {
+                    $installmentData['terms'] = $termsData;
+                }
+            }
+            if (!empty($builder->installment->eligible_plans)) {
+                $installmentData['eligible_plans'] = $builder->installment->eligible_plans;
+            }
+            
+            if (!empty($installmentData)) {
+                $requestBody['installment'] = $installmentData;
+            }
         }
 
         return $requestBody;
     }
 
-    private function setRequestStoredCredentials(StoredCredential $storedCredential, &$request)
+    private function setRequestStoredCredentials(StoredCredential $storedCredential, &$request, $builder = null, $config = null)
     {
         $request['initiator'] = !empty($storedCredential->initiator) ?
             EnumMapping::mapStoredCredentialInitiator(GatewayProvider::GP_API, $storedCredential->initiator) : null;
@@ -537,11 +631,21 @@ class GpApiAuthorizationRequestBuilder implements IRequestBuilder
             'reason' => !empty($storedCredential->reason) ? strtoupper((string) $storedCredential->reason) : null,
             'sequence' => !empty($storedCredential->sequence) ? strtoupper((string) $storedCredential->sequence) : null
         ];
+        
+        // Add contract reference if provided in StoredCredential and both currency is MXN and country is MX (Mexico)
+         if (
+            !empty($storedCredential->contract_reference)
+            && (!empty($builder->currency) && strtoupper($builder->currency) === 'MXN')
+            && (!empty($config->country) && strtoupper($config->country) === 'MX')
+        ) {
+            $request['stored_credential']['contract_reference'] = $storedCredential->contract_reference;
+        }
     }
 
     /**
      * Sets the information related to the payer
      *
+     * 
      * @param AuthorizationBuilder $builder
      * @return mixed
      */
@@ -1117,8 +1221,10 @@ class GpApiAuthorizationRequestBuilder implements IRequestBuilder
         ];
     }
 
-    public function buildRequestFromJson($jsonRequest, $config)
+    public function buildRequestFromJson(mixed $jsonRequest, mixed $config): mixed
     {
-        // TODO: Implement buildRequestFromJson() method.
+        throw new \GlobalPayments\Api\Entities\Exceptions\NotImplementedException();
     }
 }
+
+

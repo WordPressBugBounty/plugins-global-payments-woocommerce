@@ -13,25 +13,22 @@ use GlobalPayments\Api\Gateways\ProPayConnector;
 
 class PorticoConfig extends GatewayConfig
 {
-    /** @var GatewayProvider */
-    public $gatewayProvider = GatewayProvider::PORTICO;
-
     // Portico
-    public $siteId;
-    public $licenseId;
-    public $deviceId;
-    public $username;
-    public $password;
-    public $developerId;
-    public $versionNumber;
-    public $secretApiKey;
-    public $uniqueDeviceId;
+    public ?string $siteId = null;
+    public ?string $licenseId = null;
+    public ?string $deviceId = null;
+    public ?string $username = null;
+    public ?string $password = null;
+    public ?string $developerId = null;
+    public ?string $versionNumber = null;
+    public ?string $secretApiKey = null;
+    public ?string $uniqueDeviceId = null;
     
     //ProPay
-    public $certificationStr;
-    public $terminalId;
-    public $selfSignedCertLocation;
-    public $proPayUS = true;
+    public ?string $certificationStr = null;
+    public ?string $terminalId = null;
+    public ?string $selfSignedCertLocation = null;
+    public bool $proPayUS = true;
 
     public function getPayPlanEndpoint()
     {
@@ -47,30 +44,71 @@ class PorticoConfig extends GatewayConfig
     }
 
     // Common
-    public $curlOptions;
+    public ?array $curlOptions = null;
 
     /** @var Environment */
-    public $environment;
-    public $serviceUrl;
-    public $timeout;
+    public mixed $environment = null;
+    public ?string $serviceUrl = null;
 
     public function __construct()
     {
         $this->gatewayProvider = GatewayProvider::PORTICO;
     }
 
-    public function configureContainer(ConfiguredServices $services)
+    /**
+     * Validates service URL configuration and warns about potential mismatches
+    */
+    private function validateServiceUrlConfiguration(): void
     {
-        if (!empty($this->secretApiKey)) {
-            if (strpos($this->secretApiKey, '_prod_') !== false) {
-                $this->serviceUrl = ServiceEndpoints::PORTICO_PRODUCTION;
-            } else {
-                $this->serviceUrl = ServiceEndpoints::PORTICO_TEST;
-            }
+        if (empty($this->secretApiKey) || empty($this->serviceUrl)) {
+            return;
         }
 
+        $hasProductionKey = str_contains($this->secretApiKey, '_prod_');
+        $isTestEndpoint = str_contains($this->serviceUrl, ServiceEndpoints::PORTICO_TEST);
+        $isProductionEndpoint = str_contains($this->serviceUrl, ServiceEndpoints::PORTICO_PRODUCTION);
+
+        if ($hasProductionKey && $isTestEndpoint) {
+            $this->logConfigurationWarning(
+                "Production API credentials detected with test/certification endpoint. " .
+                "This configuration will route transactions to the test environment. " .
+                "Verify this is intentional for testing purposes."
+            );
+        }
+        
+        if (!$hasProductionKey && $isProductionEndpoint) {
+            $this->logConfigurationWarning(
+                "Test API credentials detected with production endpoint. " .
+                "This may result in authentication failures."
+            );
+        }
+    }
+
+    /**
+     * Logs configuration warnings
+    */
+    private function logConfigurationWarning(string $message): void
+    {
+        error_log("GlobalPayments PHP SDK - CONFIGURATION WARNING: $message");
+    }
+
+    public function configureContainer(ConfiguredServices $services):void
+    {
+        // Validate for potential configuration mismatches and warn developer
+        $this->validateServiceUrlConfiguration();
+        
+        // Only auto-set serviceUrl if not explicitly configured
         if (empty($this->serviceUrl)) {
-            $this->serviceUrl = $this->environment == Environment::TEST ? ServiceEndpoints::PORTICO_TEST : ServiceEndpoints::PORTICO_PRODUCTION; // check this
+            if (!empty($this->secretApiKey)) {
+                if (strpos($this->secretApiKey, '_prod_') !== false) {
+                    $this->serviceUrl = ServiceEndpoints::PORTICO_PRODUCTION;
+                } else {
+                    $this->serviceUrl = ServiceEndpoints::PORTICO_TEST;
+                }
+            } else {
+                $this->serviceUrl = $this->environment == Environment::TEST ? 
+                    ServiceEndpoints::PORTICO_TEST : ServiceEndpoints::PORTICO_PRODUCTION;
+            }
         }
 
         $gateway = new PorticoConnector();

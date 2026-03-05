@@ -22,15 +22,15 @@ use GlobalPayments\Api\Terminals\HPA\Entities\Enums\HpaMessageId;
 use GlobalPayments\Api\Terminals\HPA\Requests\HpaSendFileRequest;
 
 /*
- * Main controller class for Heartland payment application
+ * Main controller class for Global Payments application
  *
  */
 
 class HpaController extends DeviceController
 {
-    public $device;
+    public ?HpaInterface $device = null;
 
-    private $builderData = null;
+    private TerminalManageBuilder|TerminalAuthBuilder|null $builderData = null;
 
     /*
      * Create interface based on connection mode TCP / HTTP

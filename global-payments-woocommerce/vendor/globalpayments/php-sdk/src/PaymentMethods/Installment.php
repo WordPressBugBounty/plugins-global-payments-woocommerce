@@ -10,32 +10,32 @@ class Installment implements IInstallmentEntity
     /**
      * @var string
      */
-    public $id;
+    public ?string $id = null;
 
     /**
      * @var DateTime
      */
-    public $timeCreated;
+    public mixed $timeCreated = null;
 
     /**
      * @var string
      */
-    public $type;
+    public ?string $type = null;
 
     /**
      * @var string
      */
-    public $status;
+    public ?string $status = null;
 
     /**
      * @var string
      */
-    public $channel;
+    public ?string $channel = null;
 
     /**
      * @var string
      */
-    public $amount;
+    public ?string $amount = null;
 
     /**
      * @var string
@@ -45,66 +45,78 @@ class Installment implements IInstallmentEntity
     /**
      * @var string
      */
-    public $country;
+    public ?string $country = null;
 
     /**
      * @var string
      */
-    public $merchantId;
+    public ?string $merchantId = null;
 
      /**
      * @var string
      */
-    public $merchantName;
+    public ?string $merchantName = null;
 
      /**
      * @var string
      */
-    public $accountId;
+    public ?string $accountId = null;
 
     /**
      * @var string
      */
-    public $accountName;
+    public ?string $accountName = null;
 
     /**
      * @var string
      */
-    public $reference;
+    public ?string $reference = null;
 
     /**
      * @var string
      */
-    public $program;
+    public ?string $program = null;
+
+    /**
+     * Visa installment funding mode (e.g., 'MERCHANT', 'ISSUER')
+     * @var string
+     */
+    public ?string $funding_mode = null;
 
     /** @var Terms */
-    public $terms;
+    public mixed $terms = null;
+
+    /**
+     * Eligible plans for Visa installments (can be string in request or array in response)
+     * @var string|array|null
+     */
+    public string|array|null $eligible_plans = null;
 
     /**
      * @var string
      */
-    public $result;
+    public ?string $result = null;
 
     /**
      * @var string
      */
-    public $message;
+    public ?string $message = null;
 
     /**
      * @var string
      */
-    public $entryMode;
+    public mixed $entryMode = null;
    
     /** @var Card */
-    public $card;
+    public mixed $card = null;
     
     /** @var CreditCardData */
-    public $cardDetails;
+    public mixed $cardDetails = null;
 
     public string $authCode;
 
     /** @var Action */
-    public $action;
+    public mixed $action = null;
 
     /**
      * @param string $configName
