@@ -108,7 +108,8 @@ class GpApiAuthorizationRequestBuilder implements IRequestBuilder
                     $card = new Card();
                     $builderCard = $builder->paymentMethod;
                     $card->number = $builderCard->number;
-                    $card->expiry_month = (string) $builderCard->expMonth;
+                    $card->expiry_month = !empty($builderCard->expMonth) ?
+                        str_pad((string) $builderCard->expMonth, 2, '0', STR_PAD_LEFT) : null;
                     $card->expiry_year = !empty($builderCard->expYear) ?
                         substr(
                             str_pad((string) $builderCard->expYear, 4, '0', STR_PAD_LEFT),
@@ -313,11 +314,10 @@ class GpApiAuthorizationRequestBuilder implements IRequestBuilder
                                 $requestData['order']['transaction_configuration']['capture_mode'] = $transactionConfig->captureMode;
                             }
                             
-                            // Add currency conversion mode if available
-                            if (!empty($transactionConfig->currencyConversionMode)) {
-                                $requestData['order']['transaction_configuration']['currency_conversion_mode'] = is_bool($transactionConfig->currencyConversionMode) 
-                                    ? StringUtils::boolToYesNo($transactionConfig->currencyConversionMode) 
-                                    : "NO";
+                            // Add currency conversion mode when explicitly configured.
+                            if (!is_null($transactionConfig->currencyConversionMode)) {
+                                $requestData['order']['transaction_configuration']['currency_conversion_mode'] =
+                                    StringUtils::boolToYesNo($transactionConfig->currencyConversionMode);
                             }
                         }
                         
@@ -773,9 +773,14 @@ class GpApiAuthorizationRequestBuilder implements IRequestBuilder
         $paymentMethodContainer = $builder->paymentMethod;
         $paymentMethod = new PaymentMethod();
         $paymentMethod->entry_mode = $this->getEntryMode($builder, $config->channel);
+        $paymentMethod->usage_mode = $builder->paymentMethodUsageMode ?? null;
         $paymentMethod->name = $paymentMethodContainer instanceof AlternativePaymentMethod ?
             $paymentMethodContainer->accountHolderName : (!empty($paymentMethodContainer->cardHolderName) ?
                 $paymentMethodContainer->cardHolderName : null);
+        if (!empty($builder->customerData)) {
+            $paymentMethod->first_name = $builder->customerData->firstName ?? null;
+            $paymentMethod->last_name = $builder->customerData->lastName ?? null;
+        }
         $paymentMethod->narrative = !empty($builder->dynamicDescriptor) ? $builder->dynamicDescriptor : null;
         if ($paymentMethodContainer instanceof IEncryptable && !empty($paymentMethodContainer->encryptionData)) {
             /** @var EncryptionData $encryptionData */
@@ -795,7 +800,7 @@ class GpApiAuthorizationRequestBuilder implements IRequestBuilder
             }
         }
         switch (get_class($paymentMethodContainer)) {
-            case CreditCardData::class;
+            case CreditCardData::class:
                 $paymentMethod->fingerprint_mode =
                     (!empty($builder->customerData) & !empty($builder->customerData->deviceFingerPrint) ?
                         $builder->customerData->deviceFingerPrint : null);
@@ -916,6 +921,9 @@ class GpApiAuthorizationRequestBuilder implements IRequestBuilder
 
             if (is_null($paymentMethod->id)) {
                 $paymentMethod->card = CardUtils::generateCard($builder, GatewayProvider::GP_API, $this->maskedValues);
+                if ($paymentMethodContainer instanceof ICardData && !empty($paymentMethodContainer->number)) {
+                    $paymentMethod->card->brand = strtoupper((string)$paymentMethodContainer->getCardType());
+                }
             }
         } else {
             /* digital wallet */
@@ -965,7 +973,8 @@ class GpApiAuthorizationRequestBuilder implements IRequestBuilder
             }
             $paymentMethod->card->brand_reference = $builder->cardBrandTransactionId;
         }
-        $paymentMethod->storage_mode = $builder->requestMultiUseToken == true ? 'ON_SUCCESS' : null;
+        $paymentMethod->storage_mode = $builder->paymentMethodStorageMode
+            ?? ($builder->requestMultiUseToken == true ? 'ON_SUCCESS' : null);
 
         return $paymentMethod;
     }

@@ -514,6 +514,9 @@ class AuthorizationBuilder extends TransactionBuilder
     /** @var PaymentMethodUsageMode $paymentMethodUsageMode */
     public mixed $paymentMethodUsageMode = null;
 
+    /** @var string */
+    public ?string $paymentMethodStorageMode = null;
+
     /** @var PhoneNumber */
     public ?PhoneNumber $homePhone = null;
 
@@ -557,7 +560,7 @@ class AuthorizationBuilder extends TransactionBuilder
      * @param TransactionType $type Request transaction type
      * @param ?IPaymentMethod $paymentMethod Request payment method
      */
-    public function __construct(TransactionType|string $type, ?IPaymentMethod $paymentMethod = null)
+    public function __construct(TransactionType|int $type, ?IPaymentMethod $paymentMethod = null)
     {
         parent::__construct($type, $paymentMethod);
         $this->withPaymentMethod($paymentMethod);
@@ -803,11 +806,11 @@ class AuthorizationBuilder extends TransactionBuilder
     /**
      * Set the request's balance inquiry type
      *
-     * @param string $balanceInquiryType Balance inquiry type
+     * @param InquiryType|string|null $balanceInquiryType Balance inquiry type
      *
      * @return AuthorizationBuilder
      */
-    public function withBalanceInquiryType(InquiryType|string $balanceInquiryType): self
+    public function withBalanceInquiryType(InquiryType|string|null $balanceInquiryType): self
     {
         $this->balanceInquiryType = $balanceInquiryType;
         return $this;
@@ -1517,6 +1520,20 @@ class AuthorizationBuilder extends TransactionBuilder
     public function withPaymentMethodUsageMode(PaymentMethodUsageMode|string $value): self
     {
         $this->paymentMethodUsageMode = $value;
+
+        return $this;
+    }
+
+    /**
+     * Set the payment_method.storage_mode value for transaction requests
+     *
+     * @param string $value
+     *
+     * @return AuthorizationBuilder
+     */
+    public function withPaymentMethodStorageMode(string $value): self
+    {
+        $this->paymentMethodStorageMode = $value;
 
         return $this;
     }

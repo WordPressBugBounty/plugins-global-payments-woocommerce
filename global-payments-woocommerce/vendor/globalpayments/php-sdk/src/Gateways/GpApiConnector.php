@@ -43,10 +43,11 @@ use GlobalPayments\Api\PaymentMethods\AlternativePaymentMethod;
 use GlobalPayments\Api\Entities\RecurringEntity;
 use GlobalPayments\Api\PaymentMethods\Installment;
 use GlobalPayments\Api\Builders\InstallmentBuilder;
+use GlobalPayments\Api\Utils\StringUtils;
 
 class GpApiConnector extends RestGateway implements IPaymentGateway, ISecure3dProvider, IPayFacProvider, IFraudCheckService, IDeviceCloudService, IFileProcessingService
 {
-    const GP_API_VERSION = '2021-03-22';
+        const GP_API_VERSION = '2021-03-22';
     const IDEMPOTENCY_HEADER = 'x-gp-idempotency';
     /**
      * @var GpApiConfig
@@ -55,6 +56,54 @@ class GpApiConnector extends RestGateway implements IPaymentGateway, ISecure3dPr
     private $accessToken;
     private $builtInMerchantManagementService = true;
     private $config;
+    
+    /**
+     * Debug helper to log request and response
+     */
+    private function debugLog(string $label, $data): void
+    {
+        $logFile = __DIR__ . '/../../gpapi_debug.log';
+        file_put_contents($logFile, date('c') . " [$label] " . print_r($data, true) . "\n", FILE_APPEND);
+    }
+    /**
+     * Get a list of payers from GPAPI
+     * @param array $queryParams Optional query parameters (from_time_created, to_time_created, id, reference, etc)
+     * @return object Decoded response object
+     */
+    public function getPayersList(array $queryParams = []): mixed
+    {
+        if (empty($this->accessToken)) {
+            $this->signIn();
+        }
+        $requestBuilder = new \GlobalPayments\Api\Builders\RequestBuilder\GpApi\GpApiPayerRequestBuilder();
+        $request = $requestBuilder::buildGetPayersListRequest($queryParams);
+        $response = $this->doTransaction(
+            $request->httpVerb,
+            $request->endpoint,
+            null,
+            $request->queryParams
+        );
+        return $response;
+    }
+
+    /**
+     * Get a payer by ID from GPAPI
+     * @param string $payerId
+     * @return object Decoded response object
+     */
+    public function getPayerById(string $payerId): mixed
+    {
+        if (empty($this->accessToken)) {
+            $this->signIn();
+        }
+        $requestBuilder = new \GlobalPayments\Api\Builders\RequestBuilder\GpApi\GpApiPayerRequestBuilder();
+        $request = $requestBuilder::buildGetPayerByIdRequest($payerId);
+        $response = $this->doTransaction(
+            $request->httpVerb,
+            $request->endpoint
+        );
+        return $response;
+    }
 
     public function supportsOpenBanking() : bool
     {
@@ -294,6 +343,13 @@ class GpApiConnector extends RestGateway implements IPaymentGateway, ISecure3dPr
         if (!empty($request::$maskedValues)) {
             $this->maskedRequestData = $request::$maskedValues;
         }
+        $this->debugLog('REQUEST_EXEC_PROCESS', [
+            'httpVerb' => $request->httpVerb,
+            'endpoint' => $request->endpoint,
+            'requestBody' => $request->requestBody,
+            'queryParams' => $request->queryParams,
+            'headers' => $this->headers
+        ]);
         return $this->doTransaction(
             $request->httpVerb,
             $request->endpoint,
@@ -313,10 +369,10 @@ class GpApiConnector extends RestGateway implements IPaymentGateway, ISecure3dPr
      * @param string $verb 
      * @param string $endpoint 
      * @param string|null $data 
-     * @param array|null $queryStringParams 
-     * @param null|string $idempotencyKey 
-     * @return string 
-     * @throws GatewayException 
+    * @param array|null $queryStringParams 
+    * @param null|string $idempotencyKey 
+    * @return mixed
+    * @throws GatewayException 
      */
     public function doTransaction(
         $verb,
@@ -472,7 +528,8 @@ class GpApiConnector extends RestGateway implements IPaymentGateway, ISecure3dPr
             $this->gpApiConfig->intervalToExpire,
             $this->gpApiConfig->permissions,
             $porticoCredentials,
-            $this->gpApiConfig->secretApiKey
+            $this->gpApiConfig->secretApiKey,
+            StringUtils::boolToYesNo($this->gpApiConfig->restrictedToken)
         );
 
         $response = parent::doTransaction($request->httpVerb, $request->endpoint, $request->requestBody);

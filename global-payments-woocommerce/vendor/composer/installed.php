@@ -20,9 +20,9 @@
             'dev_requirement' => false,
         ),
         'globalpayments/php-sdk' => array(
-            'pretty_version' => '14.1.6',
-            'version' => '14.1.6.0',
-            'reference' => '58146ea6bb851b3852e1a4ef59c7495f161e559b',
+            'pretty_version' => '14.1.12',
+            'version' => '14.1.12.0',
+            'reference' => 'dcb8de123672d2c63f491e584731b30afc254232',
             'type' => 'library',
             'install_path' => __DIR__ . '/../globalpayments/php-sdk',
             'aliases' => array(),

@@ -2,7 +2,38 @@
     <img src="https://developer.globalpay.com/static/media/logo.db1c4126172e20a5c31cf9d5150cc88a.svg" alt="Global Payments logo" title="Global Payments" align="right" width="225" />
 </a>
 
-## Latest Version v14.1.6 (03/05/26)
+## Latest Version v14.1.12 (04/23/26)
+### Enhancements:
+- [HPP] Added DCC currency_conversion_mode support for explicit YES/NO serialization.
+- [GPAPI] Added ability to create 'restricted' access tokens
+### Bug Fixes:
+- [TransIT] Fixed types/properties, PHP 8.1+ deprecations, XML validation, duplicate requests, PHPUnit 9 exceptions, and input validation.
+
+## v14.1.11 (04/16/26)
+### Bug Fixes:
+- [Portico] Fixed duplicate transaction error issue
+- [GP-ECOM] Fixed HPP transaction type strict string/int comparison causing false UnsupportedTransactionException
+
+## v14.1.10 (04/08/26)
+### Enhancements:
+- [GPAPI] Add QA EU Data Residency Endpoint Support (Exclude MTLS)
+### Bug Fixes:
+- [GPAPI] Fixed expiry_month value incorrectly formatted in 'Verify' transactions using raw card data
+
+## v14.1.9 (04/02/26)
+### Enhancements:
+- [HIGH] Fixed XSS vulnerability by sanitizing pay-by-link URL output in installments example
+- [GPAPI] Bug fix links authentication param
+
+## v14.1.8 (03/26/26)
+### Enhancements:
+- [GPAPI] Added GET payers support
+
+### v14.1.7: (03/12/26)
+### Enhancements:
+- [GPAPI] Added Missing Parameters for Visa Installments and HPP Links
+
+## v14.1.6 (03/05/26)
 ### Enhancements:
 - [HIGH] Fixed hosted payment data union type
 
