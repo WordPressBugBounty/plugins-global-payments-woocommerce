@@ -2,17 +2,17 @@
     "packages": [
         {
             "name": "globalpayments/php-sdk",
-            "version": "14.2.0",
-            "version_normalized": "14.2.0.0",
+            "version": "14.2.1",
+            "version_normalized": "14.2.1.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/globalpayments/php-sdk.git",
-                "reference": "bf3cea18a1670a378c0ffd1e37487637934c475f"
+                "reference": "a0ff355d12bc707e43c9c96130dba443c1625c2d"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/globalpayments/php-sdk/zipball/bf3cea18a1670a378c0ffd1e37487637934c475f",
-                "reference": "bf3cea18a1670a378c0ffd1e37487637934c475f",
+                "url": "https://api.github.com/repos/globalpayments/php-sdk/zipball/a0ff355d12bc707e43c9c96130dba443c1625c2d",
+                "reference": "a0ff355d12bc707e43c9c96130dba443c1625c2d",
                 "shasum": ""
             },
             "require": {
@@ -31,7 +31,7 @@
                 "phpunit/phpunit": "^7.5 || ^8.5 || ~9.4",
                 "squizlabs/php_codesniffer": "2.*"
             },
-            "time": "2026-06-11T12:33:03+00:00",
+            "time": "2026-06-18T12:32:45+00:00",
             "type": "library",
             "installation-source": "dist",
             "autoload": {
@@ -52,7 +52,7 @@
             "homepage": "https://developer.heartlandpaymentsystems.com/documentation",
             "support": {
                 "issues": "https://github.com/globalpayments/php-sdk/issues",
-                "source": "https://github.com/globalpayments/php-sdk/tree/14.2.0"
+                "source": "https://github.com/globalpayments/php-sdk/tree/14.2.1"
             },
             "install-path": "../globalpayments/php-sdk"
         },
