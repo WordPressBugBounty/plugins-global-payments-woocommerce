@@ -2,8 +2,8 @@
     "packages": [
         {
             "name": "globalpayments/php-sdk",
-            "version": "14.2.1",
-            "version_normalized": "14.2.1.0",
+            "version": "14.4.1",
+            "version_normalized": "14.4.1.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/globalpayments/php-sdk.git",
