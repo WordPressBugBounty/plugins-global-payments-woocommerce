@@ -2,49 +2,69 @@
 
 namespace GlobalPayments\Api\Gateways;
 
-use GlobalPayments\Api\Builders\AuthorizationBuilder;
-use GlobalPayments\Api\Builders\BaseBuilder;
-use GlobalPayments\Api\Builders\FileProcessingBuilder;
-use GlobalPayments\Api\Builders\FraudBuilder;
-use GlobalPayments\Api\Builders\ManagementBuilder;
-use GlobalPayments\Api\Builders\PayFacBuilder;
-use GlobalPayments\Api\Builders\RecurringBuilder;
-use GlobalPayments\Api\Builders\ReportBuilder;
-use GlobalPayments\Api\Builders\RequestBuilder\GpApi\GpApiMiCRequestBuilder;
-use GlobalPayments\Api\Builders\RequestBuilder\GpApi\GpApiInstallmentRequestBuilder;
+use GlobalPayments\Api\Builders\{
+    AuthorizationBuilder,
+    BaseBuilder,
+    FileProcessingBuilder,
+    FraudBuilder,
+    InstallmentBuilder,
+    ManagementBuilder,
+    PayFacBuilder,
+    RecurringBuilder,
+    ReportBuilder,
+    Secure3dBuilder,
+};
 use GlobalPayments\Api\Builders\RequestBuilder\RequestBuilderFactory;
-use GlobalPayments\Api\Builders\Secure3dBuilder;
-use GlobalPayments\Api\Entities\Enums\PaymentMethodType;
-use GlobalPayments\Api\Entities\Enums\Secure3dVersion;
-use GlobalPayments\Api\Entities\Exceptions\ApiException;
-use GlobalPayments\Api\Entities\Exceptions\GatewayException;
-use GlobalPayments\Api\Entities\Exceptions\UnsupportedTransactionException;
-use GlobalPayments\Api\Entities\FileProcessor;
-use GlobalPayments\Api\Entities\GpApi\AccessTokenInfo;
-use GlobalPayments\Api\Entities\GpApi\GpApiRequest;
-use GlobalPayments\Api\Entities\GpApi\GpApiTokenResponse;
-use GlobalPayments\Api\Entities\GpApi\GpApiSessionInfo;
-use GlobalPayments\Api\Entities\GpApi\PagedResult;
-use GlobalPayments\Api\Entities\IRequestBuilder;
-use GlobalPayments\Api\Entities\Payer;
-use GlobalPayments\Api\Entities\Reporting\BaseSummary;
-use GlobalPayments\Api\Entities\Reporting\DepositSummary;
-use GlobalPayments\Api\Entities\Reporting\DisputeSummary;
-use GlobalPayments\Api\Entities\Reporting\MerchantAccountSummary;
-use GlobalPayments\Api\Entities\RiskAssessment;
-use GlobalPayments\Api\Entities\Transaction;
-use GlobalPayments\Api\Entities\Reporting\TransactionSummary;
-use GlobalPayments\Api\Entities\User;
-use GlobalPayments\Api\Gateways\Interfaces\IDeviceCloudService;
-use GlobalPayments\Api\Gateways\Interfaces\IFileProcessingService;
-use GlobalPayments\Api\PaymentMethods\TransactionReference;
-use GlobalPayments\Api\ServiceConfigs\Gateways\GpApiConfig;
+use GlobalPayments\Api\Builders\RequestBuilder\GpApi\{
+    GpApiInstallmentRequestBuilder,
+    GpApiMiCRequestBuilder,
+};
+use GlobalPayments\Api\Entities\{
+    FileProcessor,
+    IRequestBuilder,
+    Payer,
+    RecurringEntity,
+    RiskAssessment,
+    Transaction,
+    User,
+};
+use GlobalPayments\Api\Entities\Enums\{
+    PaymentMethodType,
+    Secure3dVersion,
+};
+use GlobalPayments\Api\Entities\Exceptions\{
+    ApiException,
+    GatewayException,
+    UnsupportedTransactionException,
+};
+use GlobalPayments\Api\Entities\GpApi\{
+    AccessTokenInfo,
+    GpApiRequest,
+    GpApiTokenResponse,
+    PagedResult,
+};
+use GlobalPayments\Api\Entities\Reporting\{
+    BaseSummary,
+    DepositSummary,
+    DisputeSummary,
+    MerchantAccountSummary,
+    TransactionSummary,
+};
+use GlobalPayments\Api\Gateways\Interfaces\{
+    IDeviceCloudService,
+    IFileProcessingService,
+};
 use GlobalPayments\Api\Mapping\GpApiMapping;
-use GlobalPayments\Api\PaymentMethods\AlternativePaymentMethod;
-use GlobalPayments\Api\Entities\RecurringEntity;
-use GlobalPayments\Api\PaymentMethods\Installment;
-use GlobalPayments\Api\Builders\InstallmentBuilder;
-use GlobalPayments\Api\Utils\StringUtils;
+use GlobalPayments\Api\PaymentMethods\{
+    AlternativePaymentMethod,
+    Installment,
+    TransactionReference,
+};
+use GlobalPayments\Api\ServiceConfigs\Gateways\GpApiConfig;
+use GlobalPayments\Api\Utils\{
+    ReleaseVersionUtils,
+    StringUtils,
+};
 
 class GpApiConnector extends RestGateway implements IPaymentGateway, ISecure3dProvider, IPayFacProvider, IFraudCheckService, IDeviceCloudService, IFileProcessingService
 {
@@ -57,15 +77,7 @@ class GpApiConnector extends RestGateway implements IPaymentGateway, ISecure3dPr
     private $accessToken;
     private $builtInMerchantManagementService = true;
     private $config;
-    
-    /**
-     * Debug helper to log request and response
-     */
-    private function debugLog(string $label, $data): void
-    {
-        $logFile = __DIR__ . '/../../gpapi_debug.log';
-        file_put_contents($logFile, date('c') . " [$label] " . print_r($data, true) . "\n", FILE_APPEND);
-    }
+
     /**
      * Get a list of payers from GPAPI
      * @param array $queryParams Optional query parameters (from_time_created, to_time_created, id, reference, etc)
@@ -167,24 +179,8 @@ class GpApiConnector extends RestGateway implements IPaymentGateway, ISecure3dPr
         $this->headers['X-GP-Version'] = self::GP_API_VERSION;
         $this->headers['Accept'] = 'application/json';
         $this->headers['Accept-Encoding'] = 'gzip';
-        $this->headers['x-gp-sdk'] = 'php;version=' . $this->getReleaseVersion();
+        $this->headers['x-gp-sdk'] = 'php;version=' . ReleaseVersionUtils::getReleaseVersion();
         $this->headers['Content-Type'] = 'charset=UTF-8';
-    }
-
-    /**
-     * Get the SDK release version
-     *
-     * @return string|null
-     */
-    private function getReleaseVersion()
-    {
-        $filename = dirname(__FILE__) . "/../../metadata.xml";
-        if (!file_exists($filename)) {
-            return null;
-        }
-        $xml = simplexml_load_string(file_get_contents($filename));
-
-        return !empty($xml->releaseNumber) ? $xml->releaseNumber : "";
     }
 
     public function getVersion()
@@ -388,13 +384,7 @@ class GpApiConnector extends RestGateway implements IPaymentGateway, ISecure3dPr
         if (!empty($request::$maskedValues)) {
             $this->maskedRequestData = $request::$maskedValues;
         }
-        $this->debugLog('REQUEST_EXEC_PROCESS', [
-            'httpVerb' => $request->httpVerb,
-            'endpoint' => $request->endpoint,
-            'requestBody' => $request->requestBody,
-            'queryParams' => $request->queryParams,
-            'headers' => $this->headers
-        ]);
+
         return $this->doTransaction(
             $request->httpVerb,
             $request->endpoint,
