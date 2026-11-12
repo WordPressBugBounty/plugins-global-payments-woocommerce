@@ -60,8 +60,8 @@ class GpApiVisaInstallmentTest extends TestCase
     private function buildGpApiConfig(string $serviceUrl, ?string $country = null): GpApiConfig
     {
         $config = new GpApiConfig();
-        $config->appId = 'hkjrcsGDhWiDt8GEhoDMKy3pzFz5R0Bo';
-        $config->appKey = 'cQOKHoAAvNIcEN8s';
+        $config->appId = '';
+        $config->appKey = '';
         $config->channel = Channel::CardNotPresent;
         if ($country !== null) {
             $config->country = $country;
@@ -166,7 +166,7 @@ class GpApiVisaInstallmentTest extends TestCase
     private function assertCapturedSuccess($response): void
     {
         $this->assertNotNull($response);
-        $this->assertEquals('SUCCESS', $response->responseCode);
+        $this->assertEquals('00', $response->responseCode);
         $this->assertEquals(TransactionStatus::CAPTURED, $response->responseMessage);
     }
 

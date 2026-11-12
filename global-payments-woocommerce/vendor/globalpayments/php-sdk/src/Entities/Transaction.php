@@ -236,6 +236,30 @@ class Transaction
     /** @var PaymentMethodUsageMode */
     public $tokenUsageMode;
 
+    /** @var string */
+    public $accountName;
+
+    /** @var string */
+    public $channel;
+
+    /** @var string */
+    public $country;
+
+    /** @var string */
+    public $amount;
+
+    /** @var string */
+    public $currency;
+
+    /** @var string */
+    public $entryMode;
+
+    /** @var string */
+    public $transactionType;
+
+    /** @var string */
+    public $type;
+
     /**
      * The transaction reference.
      *
@@ -288,6 +312,21 @@ class Transaction
      * @var PayFacResponseData
      */
     public $payFacData;
+
+    /** @var string|null */
+    public ?string $merchantId = null;
+
+    /** @var string|null */
+    public ?string $merchantName = null;
+
+    /** @var string|null */
+    public ?string $accountId = null;
+
+    /** @var Action|null */
+    public ?Action $action = null;
+
+    /** @var array<string,string>|null */
+    public ?array $responseHeaders = null;
 
     /**
      * @deprecated  Will soon be replaced with $cardDetails->cardholderName
@@ -351,6 +390,9 @@ class Transaction
 
     /** @var Card */
     public $cardDetails;
+
+    /** @var string|null */
+    public ?string $decryptId = null;
 
     /** @var Address */
     public $address;

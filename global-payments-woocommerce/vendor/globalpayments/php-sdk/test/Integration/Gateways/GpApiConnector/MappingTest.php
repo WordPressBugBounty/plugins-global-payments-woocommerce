@@ -2,8 +2,23 @@
 
 namespace Gateways\GpApiConnector;
 
+use GlobalPayments\Api\Builders\RequestBuilder\GpApi\GpApiAuthorizationRequestBuilder;
+use GlobalPayments\Api\Entities\Enums\Channel;
+use GlobalPayments\Api\Entities\Enums\DccRateType;
+use GlobalPayments\Api\Entities\Enums\Environment;
+use GlobalPayments\Api\Entities\Exceptions\GatewayException;
 use PHPUnit\Framework\TestCase;
+use GlobalPayments\Api\Builders\RequestBuilder\GpApi\GpApiReportRequestBuilder;
+use GlobalPayments\Api\Builders\TransactionReportBuilder;
+use GlobalPayments\Api\Entities\Enums\ReportType;
+use GlobalPayments\Api\Entities\GpApi\AccessTokenInfo;
+use GlobalPayments\Api\Entities\GpApi\GpApiRequest;
+use GlobalPayments\Api\Gateways\GatewayResponse;
+use GlobalPayments\Api\Gateways\GpApiConnector;
+use GlobalPayments\Api\Entities\Reporting\SearchCriteria;
 use GlobalPayments\Api\Mapping\GpApiMapping;
+use GlobalPayments\Api\PaymentMethods\CreditCardData;
+use GlobalPayments\Api\ServiceConfigs\Gateways\GpApiConfig;
 use \GlobalPayments\Api\Utils\StringUtils;
 use stdClass;
 
@@ -20,7 +35,27 @@ class MappingTest extends TestCase
          $this->assertEquals($doc->time_created, $transaction->timestamp);
          $this->assertEquals($doc->status, $transaction->responseMessage);
          $this->assertEquals($doc->reference, $transaction->referenceNumber);
-         $this->assertEquals($doc->action->result_code, $transaction->responseCode);
+         $this->assertEquals('00', $transaction->responseCode);
+
+         $doc->status = 'APPROVED';
+         $doc->action->result_code = 'CAPTURED';
+         $transactionWithCapturedResult = GpApiMapping::mapResponse($doc);
+         $this->assertEquals('00', $transactionWithCapturedResult->responseCode);
+
+         $doc->status = 'PARTIAL_APPROVAL';
+         $doc->action->result_code = 'PARTIAL_CAPTURED';
+         $transactionWithPartialApproval = GpApiMapping::mapResponse($doc);
+         $this->assertEquals('10', $transactionWithPartialApproval->responseCode);
+
+         $doc->status = 'CAPTURED';
+         $doc->action->result_code = 'DECLINED';
+         $transactionWithDeclinedResult = GpApiMapping::mapResponse($doc);
+         $this->assertEquals('DECLINED', $transactionWithDeclinedResult->responseCode);
+
+         $doc->status = 'PENDING';
+         $doc->action->result_code = null;
+         $transactionPending = GpApiMapping::mapResponse($doc);
+         $this->assertEquals('PENDING', $transactionPending->responseCode);
 
          if (!empty($transaction->batchSummary)) {
              $this->assertEquals($doc->batch_id, $transaction->batchSummary->sequenceNumber);
@@ -41,6 +76,107 @@ class MappingTest extends TestCase
             $this->assertEquals($card->expiry_year, $transaction->cardExpYear);
             $this->assertEquals($card->authcode, $transaction->authorizationCode);
         }
+     }
+
+     public function testMapCardPresentTrackDataResponse()
+     {
+         $doc = new stdClass();
+         $doc->id = 'TRN_CP_123';
+         $doc->time_created = '2024-01-15T10:00:00.000Z';
+         $doc->type = 'SALE';
+         $doc->status = 'APPROVED';
+         $doc->channel = 'CP';
+         $doc->amount = '100';
+         $doc->currency = 'CAD';
+         $doc->country = 'CA';
+         $doc->account_name = 'ACCEO STP';
+         $doc->reference = 'My-Sale-EMV-CHIP-1234345345';
+
+         $doc->payment_method = new stdClass();
+         $doc->payment_method->entry_mode = 'CHIP';
+         $doc->payment_method->card = new stdClass();
+         $doc->payment_method->card->funding = 'DEBIT';
+         $doc->payment_method->card->track = '6ntnzvADzdWnrfh9QFEunPhmgGaH+kBgxREKJuhYeeWsSoBko6OBew==';
+         $doc->payment_method->card->track_number = '2';
+         $doc->payment_method->card->tag = '9F360202104F07A00000000310109F3901059F34035E03008407A00000000310109F0902008C9F1A0201249F270180950508C00080009F3704E45A368482023C009F2608B54ABF38939404209A032310259F02060000000002009F100706010A03A0A8045F2A0201249C01009F080200969F21031106059F3303E0B8C89F4005F000F0A0019F0F05B870BC98009F1E08000000001A0000039F0E0500000000009B02E8009F4104000000599F03060000000000009F0D05B850AC88009F0702FF805F28020124500B56697361204372656469745F3401019F3501229F0607A0000000031010';
+         $doc->payment_method->card->masked_number_last4 = '1234';
+
+         $doc->payment_method->encryption = new stdClass();
+         $doc->payment_method->encryption->version = '05';
+         $doc->payment_method->encryption->method = 'KSN';
+         $doc->payment_method->encryption->info = '//89P4IAAKACpA==';
+         $doc->payment_method->encryption->type = 'ASCII';
+
+         $doc->action = new stdClass();
+         $doc->action->id = 'ACT_CP_123';
+         $doc->action->type = 'TRANSACTION_SINGLE';
+         $doc->action->result_code = 'SUCCESS';
+
+         $transaction = GpApiMapping::mapResponse($doc);
+
+         $requestSnapshot = json_encode($doc, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+        $responseSnapshot = json_encode([
+            'channel' => $transaction->channel ?? null,
+            'entry_mode' => $transaction->cardDetails->entryMode ?? null,
+            'funding' => $transaction->cardDetails->funding ?? null,
+            'track' => $transaction->cardDetails->track ?? null,
+            'track_number' => $transaction->cardDetails->trackNumber ?? null,
+            'tag' => $transaction->cardDetails->tag ?? null,
+            'encryption' => [
+                'version' => $transaction->cardDetails->encryption->version ?? null,
+                'method' => $transaction->cardDetails->encryption->method ?? null,
+                'info' => $transaction->cardDetails->encryption->info ?? null,
+                'type' => $transaction->cardDetails->encryption->type ?? null,
+            ],
+        ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+
+        $logLine = "CP mapping trace: channel=" . ($transaction->channel ?? 'null')
+            . ", entryMode=" . ($transaction->cardDetails->entryMode ?? 'null')
+            . ", funding=" . ($transaction->cardDetails->funding ?? 'null')
+            . ", track=" . ($transaction->cardDetails->track ?? 'null')
+            . ", trackNumber=" . ($transaction->cardDetails->trackNumber ?? 'null')
+            . ", encryption=" . ($transaction->cardDetails->encryption->version ?? 'null')
+            . "|" . ($transaction->cardDetails->encryption->method ?? 'null')
+            . PHP_EOL
+            . "REQUEST\n" . $requestSnapshot . "\n\nRESPONSE\n" . $responseSnapshot . PHP_EOL;
+        error_log($logLine);
+
+         $this->assertEquals('CP', $transaction->channel ?? null);
+         $this->assertEquals('CHIP', $transaction->cardDetails->entryMode ?? null);
+         $this->assertEquals('DEBIT', $transaction->cardDetails->funding ?? null);
+         $this->assertEquals('6ntnzvADzdWnrfh9QFEunPhmgGaH+kBgxREKJuhYeeWsSoBko6OBew==', $transaction->cardDetails->track ?? null);
+         $this->assertEquals('2', $transaction->cardDetails->trackNumber ?? null);
+         $this->assertEquals('9F360202104F07A00000000310109F3901059F34035E03008407A00000000310109F0902008C9F1A0201249F270180950508C00080009F3704E45A368482023C009F2608B54ABF38939404209A032310259F02060000000002009F100706010A03A0A8045F2A0201249C01009F080200969F21031106059F3303E0B8C89F4005F000F0A0019F0F05B870BC98009F1E08000000001A0000039F0E0500000000009B02E8009F4104000000599F03060000000000009F0D05B850AC88009F0702FF805F28020124500B56697361204372656469745F3401019F3501229F0607A0000000031010', $transaction->cardDetails->tag ?? null);
+         $this->assertEquals('05', $transaction->cardDetails->encryption?->version ?? null);
+         $this->assertEquals('KSN', $transaction->cardDetails->encryption?->method ?? null);
+         $this->assertEquals('//89P4IAAKACpA==', $transaction->cardDetails->encryption?->info ?? null);
+         $this->assertEquals('ASCII', $transaction->cardDetails->encryption?->type ?? null);
+
+         $docFallback = new stdClass();
+         $docFallback->id = 'TRN_CP_123_FALLBACK';
+         $docFallback->time_created = '2024-01-15T10:00:00.000Z';
+         $docFallback->type = 'SALE';
+         $docFallback->status = 'APPROVED';
+         $docFallback->channel = 'CP';
+         $docFallback->amount = '100';
+         $docFallback->currency = 'CAD';
+         $docFallback->country = 'CA';
+         $docFallback->reference = 'My-Sale-EMV-CHIP-1234345345';
+
+         $docFallback->payment_method = new stdClass();
+         $docFallback->payment_method->card = new stdClass();
+         $docFallback->payment_method->card->entry_mode = 'CHIP';
+         $docFallback->payment_method->card->funding = 'DEBIT';
+         $docFallback->payment_method->card->track = 'track-data';
+         $docFallback->payment_method->card->track_number = '2';
+         $docFallback->action = new stdClass();
+         $docFallback->action->id = 'ACT_CP_123_FALLBACK';
+         $docFallback->action->type = 'TRANSACTION_SINGLE';
+         $docFallback->action->result_code = 'SUCCESS';
+
+         $fallbackTransaction = GpApiMapping::mapResponse($docFallback);
+         $this->assertEquals('CHIP', $fallbackTransaction->entryMode ?? null);
+         $this->assertEquals('CHIP', $fallbackTransaction->cardDetails->entryMode ?? null);
      }
 
      public function testMapTransactionSummaryTest()
@@ -188,7 +324,7 @@ class MappingTest extends TestCase
 
     public function testMapDisputeSummaryTest()
     {
-        $rawJson = "{\"id\":\"DIS_SAND_abcd1234\",\"time_created\":\"2020-11-12T18:50:39.721Z\",\"merchant_id\":\"MER_62251730c5574bbcb268191b5f315de8\",\"merchant_name\":\"TEST MERCHANT\",\"account_id\":\"DIA_882c832d13e04185bb6e213d6303ed98\",\"account_name\":\"testdispute\",\"status\":\"WITH_MERCHANT\",\"status_time_created\":\"2020-11-14T18:50:39.721Z\",\"stage\":\"RETRIEVAL\",\"stage_time_created\":\"2020-11-17T18:50:39.722Z\",\"amount\":\"1000\",\"currency\":\"USD\",\"payer_amount\":\"1000\",\"payer_currency\":\"USD\",\"merchant_amount\":\"1000\",\"merchant_currency\":\"USD\",\"reason_code\":\"104\",\"reason_description\":\"Other Fraud-Card Absent Environment\",\"time_to_respond_by\":\"2020-11-29T18:50:39.722Z\",\"result\":\"PENDING\",\"investigator_comment\":\"WITH_MERCHANT RETRIEVAL PENDING 1000 USD 1000 USD\",\"system\":{\"mid\":\"627384967\",\"hierarchy\":\"111-23-099-001-001\",\"name\":\"ABC INC.\"},\"last_adjustment_amount\":\"\",\"last_adjustment_currency\":\"\",\"last_adjustment_funding\":\"\",\"last_adjustment_time_created\":\"2020-11-20T18:50:39.722Z\",\"net_financial_amount\":\"\",\"net_financial_currency\":\"\",\"net_financial_funding\":\"\",\"payment_method_provider\":[{\"comment\":\"issuer comments 34523\",\"reference\":\"issuer-reference-0001\",\"documents\":[{\"id\":\"DOC_MyEvidence_234234AVCDE-1\"}]}],\"transaction\":{\"time_created\":\"2020-10-05T18:50:39.726Z\",\"type\":\"SALE\",\"amount\":\"1000\",\"currency\":\"USD\",\"reference\":\"my-trans-AAA1\",\"remarks\":\"my-trans-AAA1\",\"payment_method\":{\"card\":{\"number\":\"424242xxxxxx4242\",\"arn\":\"834523482349123\",\"brand\":\"VISA\",\"authcode\":\"234AB\",\"brand_reference\":\"23423421342323A\"}}},\"documents\":[],\"action\":{\"id\":\"ACT_5blBTHnIs4aOCIvGwG7KizYUpsGI0g\",\"type\":\"DISPUTE_SINGLE\",\"time_created\":\"2020-11-24T18:50:39.925Z\",\"result_code\":\"SUCCESS\",\"app_id\":\"JF2GQpeCrOivkBGsTRiqkpkdKp67Gxi0\",\"app_name\":\"test_app\"}}";
+        $rawJson = "{\"id\":\"DIS_SAND_abcd1234\",\"time_created\":\"2020-11-12T18:50:39.721Z\",\"merchant_id\":\"MER_62251730c5574bbcb268191b5f315de8\",\"merchant_name\":\"TEST MERCHANT\",\"account_id\":\"DIA_882c832d13e04185bb6e213d6303ed98\",\"account_name\":\"testdispute\",\"status\":\"WITH_MERCHANT\",\"status_time_created\":\"2020-11-14T18:50:39.721Z\",\"stage\":\"RETRIEVAL\",\"stage_time_created\":\"2020-11-17T18:50:39.722Z\",\"amount\":\"1000\",\"currency\":\"USD\",\"payer_amount\":\"1000\",\"payer_currency\":\"USD\",\"merchant_amount\":\"1000\",\"merchant_currency\":\"USD\",\"reason_code\":\"104\",\"reason_description\":\"Other Fraud-Card Absent Environment\",\"time_to_respond_by\":\"2020-11-29T18:50:39.722Z\",\"result\":\"PENDING\",\"investigator_comment\":\"WITH_MERCHANT RETRIEVAL PENDING 1000 USD 1000 USD\",\"system\":{\"mid\":\"627384967\",\"hierarchy\":\"111-23-099-001-001\",\"name\":\"ABC INC.\"},\"last_adjustment_amount\":\"\",\"last_adjustment_currency\":\"\",\"last_adjustment_funding\":\"\",\"last_adjustment_time_created\":\"2020-11-20T18:50:39.722Z\",\"net_financial_amount\":\"\",\"net_financial_currency\":\"\",\"net_financial_funding\":\"\",\"payment_method_provider\":[{\"comment\":\"issuer comments 34523\",\"reference\":\"issuer-reference-0001\",\"documents\":[{\"id\":\"DOC_MyEvidence_234234AVCDE-1\"}]}],\"transaction\":{\"time_created\":\"2020-10-05T18:50:39.726Z\",\"type\":\"SALE\",\"amount\":\"1000\",\"currency\":\"USD\",\"reference\":\"my-trans-AAA1\",\"remarks\":\"my-trans-AAA1\",\"provider\":{\"payment_method\":{\"card\":{\"number\":\"424242xxxxxx4242\",\"arn\":\"834523482349123\",\"brand\":\"VISA\",\"authcode\":\"234AB\",\"brand_reference\":\"23423421342323A\"}}}},\"documents\":[],\"action\":{\"id\":\"ACT_5blBTHnIs4aOCIvGwG7KizYUpsGI0g\",\"type\":\"DISPUTE_SINGLE\",\"time_created\":\"2020-11-24T18:50:39.925Z\",\"result_code\":\"SUCCESS\",\"app_id\":\"JF2GQpeCrOivkBGsTRiqkpkdKp67Gxi0\",\"app_name\":\"test_app\"}}";
         $doc = json_decode($rawJson);
 
         $disputeSummary = GpApiMapping::mapDisputeSummary($doc);
@@ -196,6 +332,7 @@ class MappingTest extends TestCase
         $this->assertEquals($doc->id, $disputeSummary->caseId);
         $this->assertEquals(new \DateTime($doc->time_created), $disputeSummary->caseIdTime);
         $this->assertEquals($doc->status, $disputeSummary->caseStatus);
+        $this->assertEquals(new \DateTime($doc->status_time_created), $disputeSummary->statusTimeCreated);
         $this->assertEquals($doc->stage, $disputeSummary->caseStage);
         $this->assertEquals(StringUtils::toAmount($doc->amount), $disputeSummary->caseAmount);
         $this->assertEquals($doc->currency, $disputeSummary->caseCurrency);
@@ -212,6 +349,14 @@ class MappingTest extends TestCase
             $this->assertEquals($card->arn, $disputeSummary->transactionARN);
             $this->assertEquals($card->brand, $disputeSummary->transactionCardType);
         }
+        if (!empty($doc->transaction->provider->payment_method->card)) {
+            $card = $doc->transaction->provider->payment_method->card;
+            $this->assertEquals($card->number, $disputeSummary->transactionMaskedCardNumber);
+            $this->assertEquals($card->arn, $disputeSummary->transactionARN);
+            $this->assertEquals($card->brand, $disputeSummary->transactionCardType);
+            $this->assertEquals($card->authcode, $disputeSummary->transactionAuthCode);
+            $this->assertEquals($card->brand_reference, $disputeSummary->transactionBrandReference);
+        }
 
         $this->assertEquals($doc->reason_code, $disputeSummary->reasonCode);
         $this->assertEquals($doc->reason_description, $disputeSummary->reason);
@@ -220,6 +365,66 @@ class MappingTest extends TestCase
         $this->assertEquals(StringUtils::toAmount($doc->last_adjustment_amount), $disputeSummary->lastAdjustmentAmount);
         $this->assertEquals($doc->last_adjustment_currency, $disputeSummary->lastAdjustmentCurrency);
         $this->assertEquals($doc->last_adjustment_funding, $disputeSummary->lastAdjustmentFunding);
+    }
+
+    public function testDisputeSearchRequestIncludesAcquirerCodeAndOrderReferenceFilters()
+    {
+        $builder = new TransactionReportBuilder(ReportType::FIND_DISPUTES_PAGED);
+        $builder->withPaging(1, 10);
+        $builder->where(SearchCriteria::ACQUIRER_CODE, 'ACQ-12345');
+        $builder->where(SearchCriteria::ORDER_ID, 'ORD-98765');
+
+        $config = new stdClass();
+        $config->accessTokenInfo = new stdClass();
+        $config->accessTokenInfo->dataAccountName = 'test-account';
+        $config->accessTokenInfo->dataAccountID = 'account-1';
+
+        $request = (new GpApiReportRequestBuilder())->buildRequest($builder, $config);
+
+        $this->assertSame('ACQ-12345', $request->queryParams['acquirer_code']);
+        $this->assertSame('ORD-98765', $request->queryParams['order.reference']);
+    }
+
+    public function testMapDisputeSummaryIncludesTopLevelContextAndNestedOrderReference()
+    {
+        $rawJson = '{"id":"DIS_SAND_abcd1234","time_created":"2020-11-12T18:50:39.721Z","merchant_id":"MER_001","merchant_name":"Test Merchant","account_id":"ACC_001","account_name":"Test Account","status":"WITH_MERCHANT","status_time_created":"2020-11-14T18:50:39.721Z","stage":"RETRIEVAL","stage_time_created":"2020-11-17T18:50:39.722Z","amount":"1000","currency":"USD","payer_amount":"1000","payer_currency":"USD","merchant_amount":"900","merchant_currency":"USD","net_financial_amount":"100","net_financial_currency":"USD","net_financial_funding":"CREDIT","reason_code":"104","reason_description":"Other Fraud-Card Absent Environment","result":"PENDING","funding_type":"CREDIT","acquirer_code":"ACQ-123","system":{"mid":"627384967","hierarchy":"111-23-099-001-001","name":"ABC INC.","tid":"TID-99","dba":"ABC DBA"},"transaction":{"time_created":"2020-10-05T18:50:39.726Z","type":"SALE","amount":"1000","currency":"USD","reference":"my-trans-AAA1","remarks":"my-trans-AAA1","order":{"reference":"ORD-555"},"provider":{"payment_method":{"card":{"number":"424242xxxxxx4242","arn":"834523482349123","brand":"VISA","authcode":"234AB","brand_reference":"23423421342323A"}}}}}' ;
+        $doc = json_decode($rawJson);
+
+        $disputeSummary = GpApiMapping::mapDisputeSummary($doc);
+
+        $this->assertSame('MER_001', $disputeSummary->merchantId);
+        $this->assertSame('Test Merchant', $disputeSummary->merchantName);
+        $this->assertSame('ACC_001', $disputeSummary->accountId);
+        $this->assertSame('Test Account', $disputeSummary->accountName);
+        $this->assertSame('ACQ-123', $disputeSummary->acquirerCode);
+        $this->assertSame('TID-99', $disputeSummary->systemTid);
+        $this->assertSame('TID-99', $disputeSummary->merchantDeviceIdentifier);
+        $this->assertSame('ABC DBA', $disputeSummary->systemDba);
+        $this->assertSame('ORD-555', $disputeSummary->transactionOrderReference);
+        $this->assertEquals(9.0, $disputeSummary->merchantAmount);
+        $this->assertSame('USD', $disputeSummary->merchantCurrency);
+        $this->assertEquals(1.0, $disputeSummary->netFinancialAmount);
+        $this->assertSame('USD', $disputeSummary->netFinancialCurrency);
+        $this->assertSame('CREDIT', $disputeSummary->netFinancialFunding);
+    }
+
+    public function testMapDisputeSummaryWithoutSystemPreservesZeroValuesAndInitializesNullableFields()
+    {
+        $rawJson = '{"id":"DIS_SAND_zero_case","time_created":"2020-11-12T18:50:39.721Z","merchant_id":"MER_001","merchant_name":"Test Merchant","account_id":"ACC_001","account_name":"Test Account","status":"WITH_MERCHANT","status_time_created":"2020-11-14T18:50:39.721Z","stage":"RETRIEVAL","stage_time_created":"2020-11-17T18:50:39.722Z","amount":"1000","currency":"USD","payer_amount":"0","payer_currency":"USD","merchant_amount":"0","merchant_currency":"USD","net_financial_amount":"0","net_financial_currency":"USD","net_financial_funding":"CREDIT","reason_code":"104","reason_description":"Other Fraud-Card Absent Environment","result":"PENDING","funding_type":"CREDIT"}';
+        $doc = json_decode($rawJson);
+
+        $disputeSummary = GpApiMapping::mapDisputeSummary($doc);
+
+        $this->assertSame('MER_001', $disputeSummary->caseMerchantId);
+        $this->assertSame('MER_001', $disputeSummary->merchantId);
+        $this->assertSame('Test Merchant', $disputeSummary->merchantName);
+        $this->assertNull($disputeSummary->merchantHierarchy);
+        $this->assertNull($disputeSummary->merchantDbaName);
+        $this->assertNull($disputeSummary->merchantDeviceIdentifier);
+        $this->assertSame(0.0, $disputeSummary->merchantAmount);
+        $this->assertSame(0.0, $disputeSummary->netFinancialAmount);
+        $this->assertSame('USD', $disputeSummary->merchantCurrency);
+        $this->assertSame('USD', $disputeSummary->netFinancialCurrency);
     }
 
     public function testMapResponseAPMNormalizesRedirectUrlPathAndPreservesQueryAndFragment()
@@ -265,6 +470,183 @@ class MappingTest extends TestCase
             "https://example.com:bad-port//redirect?token=abc#step",
             $transaction->alternativePaymentResponse->redirectUrl
         );
+    }
+
+    public function testDccLookupRequestIncludesTransactionTypeAndFullPaymentMethod()
+    {
+        $card = new CreditCardData();
+        $card->number = '4006097467207025';
+        $card->expMonth = '05';
+        $card->expYear = '2025';
+        $card->cardHolderName = 'James Mason';
+
+        $config = new GpApiConfig();
+        $config->channel = Channel::CardNotPresent;
+        $config->country = 'US';
+        $config->accessTokenInfo = new AccessTokenInfo();
+        $config->accessTokenInfo->transactionProcessingAccountName = 'dcc';
+
+        $builder = $card->getDccRate(DccRateType::REFUND)
+            ->withAmount(100)
+            ->withCurrency('USD')
+            ->withClientTransactionId('becf9f3e-4d33-459c-8ed2-0c4affc9555e');
+
+        $request = (new GpApiAuthorizationRequestBuilder())->buildRequest($builder, $config);
+
+        $this->assertSame('/currency-conversions', $request->endpoint);
+        $this->assertSame('POST', $request->httpVerb);
+        $this->assertSame('dcc', $request->requestBody['account_name']);
+        $this->assertSame('REFUND', $request->requestBody['transaction_type']);
+        $this->assertSame('CNP', $request->requestBody['channel']);
+        $this->assertSame('10000', $request->requestBody['amount']);
+        $this->assertSame('USD', $request->requestBody['currency']);
+        $this->assertSame('US', $request->requestBody['country']);
+        $this->assertSame('becf9f3e-4d33-459c-8ed2-0c4affc9555e', $request->requestBody['reference']);
+        $this->assertSame('James Mason', $request->requestBody['payment_method']->name);
+        $this->assertSame('ECOM', $request->requestBody['payment_method']->entry_mode);
+        $this->assertSame('4006097467207025', $request->requestBody['payment_method']->card->number);
+        $this->assertSame('05', $request->requestBody['payment_method']->card->expiry_month);
+        $this->assertSame('25', $request->requestBody['payment_method']->card->expiry_year);
+    }
+
+    public function testMapDccLookupResponseIncludesExpandedFields()
+    {
+        $rawJson = '{"id":"TRN_uzFr7t4VOqxdLDI44hHmXIjHtOOE8d","time_created":"2021-05-03T21:23:39.718Z","model":"FROM_TRANSACTION_CURRENCY","status":"AVAILABLE","country":"US","transaction_type":"SALE","channel":"CNP","amount":"11099","currency":"USD","minor_units":"2","formatted_amount":"105.55","exchange_rate":"1.8117","payer_amount":"223665","payer_currency":"AUD","margin_rate_percentage":"03.7500","exchange_rate_source":"REUTERS WHOLESALE INTERBANK","exchange_rate_time_created":"2018-08-20T11:18","commission_percentage":"00.0000","merchant_id":"MER_c4c0df11039c48a9b63701adeaa296c3","merchant_name":"Sandbox_merchant_2","account_id":"TRA_86920f927028745yt34d077d88beb29b","account_name":"transaction_processing","reference":"becf9f3e-4d33-459c-8ed2-0c4affc9555e","payment_method":{"name":"James Mason","result":"00","message":"Successful","entry_mode":"ECOM","card":{"masked_number_last4":"XXXXXXXXXXXX7025","brand":"VISA"}},"action":{"id":"ACT_uzFr7t4VOqxdLDI44hHmXIjHtOOE8d","type":"RATE_LOOKUP","time_created":"2021-05-03T21:23:39.718Z","result_code":"SUCCESS","app_id":"4gPqnGBkppGYvoE5UX9EWQlotTxGUDbs","app_name":"sample_app"}}';
+        $transaction = GpApiMapping::mapResponse(json_decode($rawJson));
+
+        $this->assertSame('SALE', $transaction->originalTransactionType);
+        $this->assertSame('US', $transaction->country);
+        $this->assertSame('CNP', $transaction->channel);
+        $this->assertSame('MER_c4c0df11039c48a9b63701adeaa296c3', $transaction->merchantId);
+        $this->assertSame('Sandbox_merchant_2', $transaction->merchantName);
+        $this->assertSame('TRA_86920f927028745yt34d077d88beb29b', $transaction->accountId);
+        $this->assertSame('transaction_processing', $transaction->accountName);
+        $this->assertNotNull($transaction->action);
+        $this->assertSame('RATE_LOOKUP', $transaction->action->type);
+        $this->assertNotNull($transaction->dccRateData);
+        $this->assertSame('FROM_TRANSACTION_CURRENCY', $transaction->dccRateData->model);
+        $this->assertSame('AVAILABLE', $transaction->dccRateData->status);
+        $this->assertSame('SALE', $transaction->dccRateData->transactionType);
+        $this->assertSame('US', $transaction->dccRateData->country);
+        $this->assertSame('CNP', $transaction->dccRateData->channel);
+        $this->assertSame('2', $transaction->dccRateData->minorUnits);
+        $this->assertSame('105.55', $transaction->dccRateData->formattedAmount);
+        $this->assertSame('00', $transaction->dccRateData->paymentMethodResult);
+        $this->assertSame('Successful', $transaction->dccRateData->paymentMethodMessage);
+        $this->assertSame('ECOM', $transaction->dccRateData->paymentMethodEntryMode);
+        $this->assertSame('James Mason', $transaction->dccRateData->paymentMethodName);
+        $this->assertSame('VISA', $transaction->dccRateData->cardDetails->brand);
+        $this->assertSame('XXXXXXXXXXXX7025', $transaction->dccRateData->cardDetails->maskedNumberLast4);
+        $this->assertSame('transaction_processing', $transaction->dccRateData->accountName);
+        $this->assertSame('becf9f3e-4d33-459c-8ed2-0c4affc9555e', $transaction->dccRateData->reference);
+        $this->assertSame('RATE_LOOKUP', $transaction->dccRateData->action->type);
+    }
+
+    public function testDccBinRangesRequestIncludesSupportedQueryFields()
+    {
+        $builder = new TransactionReportBuilder(ReportType::FIND_DCC_BIN_RANGES);
+        $builder->where(SearchCriteria::ACCOUNT_NAME, 'GPECOM_DCC_BIN_Download')
+            ->andWith(SearchCriteria::COUNTRY, 'US')
+            ->andWith(SearchCriteria::MERCHANT_CURRENCY, 'USD')
+            ->andWith(SearchCriteria::PAYER_CURRENCY, ['EUR', 'GBP'])
+            ->andWith(SearchCriteria::TIME_LAST_RECEIVED, '2022-04-11')
+            ->andWith(SearchCriteria::LAST_INDEX, 40);
+
+        $request = (new GpApiReportRequestBuilder())->buildRequest($builder, new stdClass());
+
+        $this->assertSame('/currency-conversions/dcc-bin-ranges', $request->endpoint);
+        $this->assertSame('GET', $request->httpVerb);
+        $this->assertSame('GPECOM_DCC_BIN_Download', $request->queryParams['account_name']);
+        $this->assertSame('US', $request->queryParams['country']);
+        $this->assertSame('USD', $request->queryParams['merchant_currency']);
+        $this->assertSame(['EUR', 'GBP'], $request->queryParams['payer_currency']);
+        $this->assertSame('2022-04-11', $request->queryParams['time_last_received']);
+        $this->assertSame(40, $request->queryParams['last_index']);
+    }
+
+    public function testMapDccBinRangesResponseIncludesFilterRangesAndAction()
+    {
+        $rawJson = '{"time_created":"2022-04-11T13:29:10.596Z","is_last_page":"NO","time_retrieved":"2022-04-11","current_index":40,"current_page_size":20,"merchant_id":"MER_c4c0df11039c48a9b63701adeaa296c3","merchant_name":"Sandbox_merchant_2","account_id":"TRA_d9eea42b1f30482cae161c732d837ed6","account_name":"Transaction_Processing","filter":{"country":"US","merchant_currency":"USD","payer_currency":["EUR","GBP"]},"paging":{},"dcc_bin_ranges":[{"low_prefix_number":"2222420010","high_prefix_number":"2222420269","status":"ACTIVE"}],"action":{"id":"ACT_Kq7jZogQ5mRsY4yvwXguw3iizKGUdI","type":"DCC_BIN_RANGE_LIST","time_created":"2022-04-11T17:48:14.215Z","result_code":"SUCCESS","app_id":"","app_name":"DCCPP"}}';
+        $summary = GpApiMapping::mapReportResponse(json_decode($rawJson), ReportType::FIND_DCC_BIN_RANGES);
+
+        $this->assertSame('2022-04-11T13:29:10.596Z', $summary->timeCreated);
+        $this->assertSame('NO', $summary->isLastPage);
+        $this->assertSame('2022-04-11', $summary->timeRetrieved);
+        $this->assertSame(40, $summary->currentIndex);
+        $this->assertSame(20, $summary->currentPageSize);
+        $this->assertSame('MER_c4c0df11039c48a9b63701adeaa296c3', $summary->merchantId);
+        $this->assertSame('Sandbox_merchant_2', $summary->merchantName);
+        $this->assertSame('TRA_d9eea42b1f30482cae161c732d837ed6', $summary->accountId);
+        $this->assertSame('Transaction_Processing', $summary->accountName);
+        $this->assertSame('US', $summary->filter->country);
+        $this->assertSame('USD', $summary->filter->merchantCurrency);
+        $this->assertSame(['EUR', 'GBP'], $summary->filter->payerCurrency);
+        $this->assertCount(1, $summary->result);
+        $this->assertSame('2222420010', $summary->result[0]->lowPrefixNumber);
+        $this->assertSame('2222420269', $summary->result[0]->highPrefixNumber);
+        $this->assertSame('ACTIVE', $summary->result[0]->status);
+        $this->assertNotNull($summary->action);
+        $this->assertSame('DCC_BIN_RANGE_LIST', $summary->action->type);
+    }
+
+    public function testGpApiGatewayExceptionIncludesStructuredErrorFieldsAndHeaders()
+    {
+        $config = new GpApiConfig();
+        $config->environment = Environment::TEST;
+        $config->accessTokenInfo = new AccessTokenInfo();
+        $config->accessTokenInfo->accessToken = 'token';
+
+        $connector = new class($config) extends GpApiConnector {
+            protected function sendRequest($verb, $endpoint, $data = null, ?array $queryStringParams = null)
+            {
+                $response = new GatewayResponse();
+                $response->statusCode = 400;
+                $response->header = "HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\nX-GP-Version: 2021-03-22\r\n\r\n";
+                $response->rawResponse = '{"error_code":"MANDATORY_DATA_MISSING","detailed_error_code":"40005","detailed_error_description":"Request expects the following fields : amount"}';
+
+                return $response;
+            }
+        };
+        $connector->serviceUrl = 'https://apis.sandbox.globalpay.com/ucp';
+
+        $exceptionCaught = false;
+
+        try {
+            $connector->doTransaction('POST', GpApiRequest::DCC_ENDPOINT, ['currency' => 'USD']);
+        } catch (GatewayException $e) {
+            $exceptionCaught = true;
+            $this->assertSame('MANDATORY_DATA_MISSING', $e->errorCode);
+            $this->assertSame('40005', $e->detailedErrorCode);
+            $this->assertSame('Request expects the following fields : amount', $e->detailedErrorDescription);
+            $this->assertSame(400, $e->httpStatusCode);
+            $this->assertSame('2021-03-22', $e->responseHeaders['x-gp-version']);
+            $this->assertSame('application/json', $e->responseHeaders['content-type']);
+        } finally {
+            $this->assertTrue($exceptionCaught);
+        }
+    }
+
+    public function testBuildQueryStringUsesRepeatedKeysForArrayValues(): void
+    {
+        $gateway = new class extends \GlobalPayments\Api\Gateways\Gateway {
+            public function __construct()
+            {
+                parent::__construct('application/json');
+            }
+
+            public function buildQueryStringForTest(array $query): string
+            {
+                return $this->buildQueryString($query);
+            }
+        };
+
+        $this->assertSame('?payer_currency=EUR&payer_currency=GBP', $gateway->buildQueryStringForTest([
+            'payer_currency' => ['EUR', 'GBP'],
+        ]));
+        $this->assertSame('?include_inactive=0&flag=1', $gateway->buildQueryStringForTest([
+            'include_inactive' => false,
+            'flag' => true,
+        ]));
     }
 
     /**

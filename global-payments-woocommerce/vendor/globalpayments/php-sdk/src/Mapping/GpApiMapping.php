@@ -123,7 +123,21 @@ class GpApiMapping
         if (empty($response)) {
             return $transaction;
         }
-        $transaction->responseCode = $response->action->result_code;
+
+        // /decrypt responses do not contain an action object.
+        if (empty($response->action) && self::isDecryptActionResponse($response)) {
+            return self::mapDecryptResponse($response, $transaction);
+        }
+
+        $rawResultCode = $response->action->result_code
+            ?? $response->result_code
+            ?? $response->response_code
+            ?? null;
+
+        $transaction->responseCode = self::normalizeResponseCode(
+            $rawResultCode !== null ? (string) $rawResultCode : null,
+            $response->status ?? null
+        );
         $transaction->responseMessage = $response->status;
 
         switch ($response->action->type) {
@@ -144,10 +158,28 @@ class GpApiMapping
         }
 
         $transaction->transactionId = $response->id;
+        if (self::isDecryptActionResponse($response)) {
+            $transaction->decryptId = $response->id;
+        }
+        $transaction->action = self::mapActionMetadata($response->action ?? null);
+        $transaction->transactionType = $response->type ?? null;
+        $transaction->type = $response->type ?? null;
+        $transaction->channel = $response->channel ?? null;
+        $transaction->amount = isset($response->amount) && $response->amount !== '' ?
+            StringUtils::toAmount($response->amount, $response->currency ?? null) : null;
+        $transaction->currency = $response->currency ?? null;
+        $transaction->country = $response->country ?? null;
+        $transaction->accountName = $response->account_name ?? null;
         $transaction->clientTransactionId = !empty($response->reference) ? $response->reference : null;
         $transaction->timestamp = !empty($response->time_created) ? $response->time_created : '';
         $transaction->referenceNumber = !empty($response->reference) ? $response->reference : null;
-        $transaction->originalTransactionType = $response->type ?? null;
+        $transaction->originalTransactionType = $response->type ?? $response->transaction_type ?? null;
+        $transaction->merchantId = $response->merchant_id ?? null;
+        $transaction->merchantName = $response->merchant_name ?? null;
+        $transaction->accountId = $response->account_id ?? null;
+        $transaction->accountName = $response->account_name ?? null;
+        $transaction->country = $response->country ?? null;
+        $transaction->channel = $response->channel ?? null;
         $batchSummary = new BatchSummary();
         $batchSummary->batchReference = !empty($response->batch_id) ? $response->batch_id : null;
         $batchSummary->transactionCount = !empty($response->transaction_count) ? $response->transaction_count : null;
@@ -172,7 +204,7 @@ class GpApiMapping
             $response->id : null;
         $transaction->tokenUsageMode = !empty($response->usage_mode) ? $response->usage_mode : null;
         if (!empty($response->payment_method)) {
-            self::mapPaymentMethodTransactionDetails($transaction, $response->payment_method);
+            self::mapAndApplyPaymentMethodDetails($transaction, $response->payment_method);
         }
         if (!empty($response->transfers)) {
             self::mapTransferFundsAccountDetails($transaction, $response->transfers);
@@ -226,6 +258,87 @@ class GpApiMapping
         return $transaction;
     }
 
+    private static function mapDecryptResponse(object $response, Transaction $transaction): Transaction
+    {
+        $transaction->transactionId = $response->id ?? null;
+        $transaction->decryptId = $response->id ?? null;
+        $rawResultCode = $response->result ?? ($response->result_code ?? null);
+        $transaction->responseCode = self::normalizeResponseCode(
+            $rawResultCode !== null ? (string) $rawResultCode : null,
+            $response->status ?? null
+        );
+        $transaction->responseMessage = $response->status ?? null;
+
+        if (!empty($response->payment_method)) {
+            self::mapAndApplyPaymentMethodDetails($transaction, $response->payment_method);
+        }
+
+        if (!empty($response->payer)) {
+            $transaction->payerDetails = self::mapPayerDetails($response->payer);
+        }
+
+        return $transaction;
+    }
+
+    private static function normalizeResponseCode(?string $responseCode, ?string $status = null): ?string
+    {
+        $normalizedResponseCode = $responseCode !== null ? strtoupper(trim((string) $responseCode)) : null;
+        $normalizedStatus = ($normalizedResponseCode === null || $normalizedResponseCode === '') && $status !== null
+            ? strtoupper(trim($status))
+            : null;
+
+        foreach ([$normalizedResponseCode, $normalizedStatus] as $value) {
+            if ($value === null || $value === '') {
+                continue;
+            }
+
+            if (in_array($value, ['00', '10'], true)) {
+                return $value;
+            }
+
+            if (in_array($value, ['0', '000'], true)) {
+                return '00';
+            }
+
+            if (in_array($value, ['1', '010'], true)) {
+                return '10';
+            }
+
+            if (in_array($value, [
+                TransactionStatus::CAPTURED,
+                TransactionStatus::PREAUTHORIZED,
+                TransactionStatus::INITIATED,
+                TransactionStatus::REVERSED,
+                TransactionStatus::BATCHED,
+                TransactionStatus::FUNDED,
+                'SUCCESS',
+                'APPROVED',
+                'APPROVAL',
+                'AUTHORIZED',
+                'AUTHORISED',
+                'CAPTURED',
+                'PREAUTHORISED',
+                'INITIATED',
+                'REVERSED',
+                'BATCHED',
+                'FUNDED',
+            ], true)) {
+                return '00';
+            }
+
+            if (in_array($value, [
+                'PARTIAL_APPROVAL',
+                'PARTIALLY_APPROVED',
+                'PARTIAL_CAPTURED',
+                'PARTIALLY_CAPTURED',
+                'PARTIAL',
+            ], true)) {
+                return '10';
+            }
+        }
+
+        return $normalizedResponseCode ?? $normalizedStatus ?? $responseCode;
+    }
     private static function mapBatchCloseResponse(BatchSummary &$batchSummary, $response): void
     {
         $batchSummary->id = $response->id;
@@ -236,8 +349,11 @@ class GpApiMapping
         $batchSummary->hostTotalAmt = !empty($response->host_breakdown->amount) ?
             StringUtils::toAmount($response->host_breakdown->amount, $response->currency ?? null) : null;
         $batchSummary->batchTotals = self::extractBatchTotals($response);
-        foreach ($response->brand_breakdown as $brandBreakdown) {
-            $batchSummary->brandBreakdown[$brandBreakdown->brand] = self::extractBatchTotals($brandBreakdown);
+        $batchSummary->brandBreakdown = [];
+        if (!empty($response->brand_breakdown) && is_iterable($response->brand_breakdown)) {
+            foreach ($response->brand_breakdown as $brandBreakdown) {
+                $batchSummary->brandBreakdown[$brandBreakdown->brand] = self::extractBatchTotals($brandBreakdown);
+            }
         }
     }
 
@@ -288,6 +404,8 @@ class GpApiMapping
 
     private static function mapPaymentMethodTransactionDetails(Transaction &$transaction, $paymentMethodResponse): void
     {
+        $paymentMethodResponse = self::normalizeToObject($paymentMethodResponse);
+
         $cardIssuerResponse = new CardIssuerResponse();
         $cardIssuerResponse->result = $paymentMethodResponse->result ?? null;
         if (!empty($paymentMethodResponse->id)) {
@@ -300,6 +418,13 @@ class GpApiMapping
         $paymentMethodObj = $paymentMethodResponse->card ?? ($paymentMethodResponse->digital_wallet ?? null);
         if (!empty($paymentMethodObj)) {
             $transaction->cardDetails = self::mapCardDetails($paymentMethodObj);
+            $transaction->entryMode = $paymentMethodResponse->entry_mode ?? $transaction->cardDetails->entryMode ?? null;
+            $transaction->cardDetails->entryMode = $transaction->entryMode;
+            if (!empty($paymentMethodResponse->encryption)) {
+                $transaction->cardDetails->encryption = is_object($paymentMethodResponse->encryption)
+                    ? $paymentMethodResponse->encryption
+                    : (object) $paymentMethodResponse->encryption;
+            }
 
             $transaction->cardLast4 = $paymentMethodObj->masked_number_last4 ?? null;
             $transaction->cardType = $paymentMethodObj->brand ?? null;
@@ -393,6 +518,66 @@ class GpApiMapping
         }
     }
 
+    private static function isDecryptActionResponse(object $response): bool
+    {
+        return (
+            ($response->type ?? null) === 'DECRYPT' ||
+            (!empty($response->action) && ($response->action->type ?? null) === 'DECRYPT_TOKEN')
+        );
+    }
+
+    private static function mapAndApplyPaymentMethodDetails(
+        Transaction &$transaction,
+        array|object|null $paymentMethodResponse
+    ): void
+    {
+        self::mapPaymentMethodTransactionDetails($transaction, $paymentMethodResponse);
+        self::applyPaymentMethodToken($transaction, $paymentMethodResponse);
+    }
+
+    private static function applyPaymentMethodToken(
+        Transaction &$transaction,
+        array|object|null $paymentMethodResponse
+    ): void
+    {
+        $paymentMethodId = self::extractPaymentMethodId($paymentMethodResponse);
+        if (empty($transaction->token) && !empty($paymentMethodId)) {
+            $transaction->token = $paymentMethodId;
+        }
+    }
+
+    private static function extractPaymentMethodId(array|object|null $paymentMethodResponse): ?string
+    {
+        if (is_array($paymentMethodResponse)) {
+            return $paymentMethodResponse['id'] ?? null;
+        }
+
+        if (is_object($paymentMethodResponse)) {
+            return $paymentMethodResponse->id ?? null;
+        }
+
+        return null;
+    }
+
+    private static function normalizeToObject(mixed $value): object
+    {
+        if (is_object($value)) {
+            return $value;
+        }
+
+        if (is_array($value)) {
+            $decoded = json_decode(json_encode($value));
+
+            if (is_object($decoded)) {
+                return $decoded;
+            }
+
+            return (object) ($decoded ?? []);
+        }
+
+        return new \stdClass();
+    }
+
     private static function mapPayerDetails($payer, $shippingAddress = null): PayerDetails
     {
         $payerDetails = new PayerDetails();
@@ -458,22 +643,43 @@ class GpApiMapping
     private static function mapDccInfo($response): DccRateData
     {
         $dccRateData = new DccRateData();
-        $dccRateData->cardHolderCurrency = !empty($response->payer_currency) ? $response->payer_currency : null;
-        $dccRateData->cardHolderAmount = !empty($response->payer_amount) ?
+        $dccRateData->dccId = $response->id ?? null;
+        $dccRateData->model = $response->model ?? null;
+        $dccRateData->status = $response->status ?? null;
+        $dccRateData->country = $response->country ?? null;
+        $dccRateData->channel = $response->channel ?? null;
+        $dccRateData->transactionType = $response->transaction_type ?? null;
+        $dccRateData->cardHolderCurrency = $response->payer_currency ?? null;
+        $dccRateData->cardHolderAmount = isset($response->payer_amount) && $response->payer_amount !== '' ?
             StringUtils::toAmount($response->payer_amount, $response->payer_currency ?? null) : null;
-        $dccRateData->cardHolderRate = !empty($response->exchange_rate) ? $response->exchange_rate : null;
-        $dccRateData->merchantCurrency = !empty($response->currency) ? $response->currency : null;
-        $dccRateData->merchantAmount = !empty($response->amount) ?
+        $dccRateData->minorUnits = $response->minor_units ?? null;
+        $dccRateData->formattedAmount = $response->formatted_amount ?? null;
+        $dccRateData->cardHolderRate = $response->exchange_rate ?? null;
+        $dccRateData->merchantCurrency = $response->currency ?? null;
+        $dccRateData->merchantAmount = isset($response->amount) && $response->amount !== '' ?
             StringUtils::toAmount($response->amount, $response->currency ?? null) : null;
-        $dccRateData->marginRatePercentage = !empty($response->margin_rate_percentage) ?
-            $response->margin_rate_percentage : null;
-        $dccRateData->exchangeRateSourceName = !empty($response->exchange_rate_source) ?
-            $response->exchange_rate_source : null;
-        $dccRateData->commissionPercentage = !empty($response->commission_percentage) ?
-            $response->commission_percentage : null;
-        $dccRateData->exchangeRateSourceTimestamp = !empty($response->exchange_rate_time_created) ?
-            $response->exchange_rate_time_created : null;
-        $dccRateData->dccId = !empty($response->id) ? $response->id : null;
+        $dccRateData->marginRatePercentage = $response->margin_rate_percentage ?? null;
+        $dccRateData->exchangeRateSourceName = $response->exchange_rate_source ?? null;
+        $dccRateData->commissionPercentage = $response->commission_percentage ?? null;
+        $dccRateData->exchangeRateSourceTimestamp = $response->exchange_rate_time_created ?? null;
+        $dccRateData->merchantId = $response->merchant_id ?? null;
+        $dccRateData->merchantName = $response->merchant_name ?? null;
+        $dccRateData->accountId = $response->account_id ?? null;
+        $dccRateData->accountName = $response->account_name ?? null;
+        $dccRateData->reference = $response->reference ?? null;
+        $dccRateData->action = self::mapActionMetadata($response->action ?? null);
+
+        if (!empty($response->payment_method)) {
+            $paymentMethod = self::normalizeToObject($response->payment_method);
+            $dccRateData->paymentMethodResult = $paymentMethod->result ?? null;
+            $dccRateData->paymentMethodMessage = $paymentMethod->message ?? null;
+            $dccRateData->paymentMethodEntryMode = $paymentMethod->entry_mode ?? null;
+            $dccRateData->paymentMethodName = $paymentMethod->name ?? null;
+
+            if (!empty($paymentMethod->card)) {
+                $dccRateData->cardDetails = self::mapCardDetails(self::normalizeToObject($paymentMethod->card));
+            }
+        }
 
         return $dccRateData;
     }
@@ -532,6 +738,9 @@ class GpApiMapping
             case ReportType::STORED_PAYMENT_METHOD_DETAIL:
                 $report = self::mapStoredPaymentMethodSummary($response);
                 break;
+            case ReportType::FIND_DCC_BIN_RANGES:
+                $report = self::mapDccBinRangeSummary($response);
+                break;
             case ReportType::ACTION_DETAIL:
                 $report = self::mapActionsSummary($response);
                 break;
@@ -569,6 +778,42 @@ class GpApiMapping
         }
 
         return $report;
+    }
+
+    private static function mapDccBinRangeSummary(object $response): PagedResult
+    {
+        $summary = new PagedResult();
+        $summary->timeCreated = $response->time_created ?? null;
+        $summary->isLastPage = $response->is_last_page ?? null;
+        $summary->timeRetrieved = $response->time_retrieved ?? null;
+        $summary->currentIndex = isset($response->current_index) ? (int) $response->current_index : null;
+        $summary->currentPageSize = isset($response->current_page_size) ? (int) $response->current_page_size : null;
+        $summary->merchantId = $response->merchant_id ?? null;
+        $summary->merchantName = $response->merchant_name ?? null;
+        $summary->accountId = $response->account_id ?? null;
+        $summary->accountName = $response->account_name ?? null;
+        $summary->paging = isset($response->paging) ? self::normalizeToObject($response->paging) : null;
+        $summary->action = self::mapActionMetadata($response->action ?? null);
+
+        if (!empty($response->filter)) {
+            $rawFilter = self::normalizeToObject($response->filter);
+            $filter = new \stdClass();
+            $filter->country = $rawFilter->country ?? null;
+            $filter->merchantCurrency = $rawFilter->merchant_currency ?? null;
+            $filter->payerCurrency = isset($rawFilter->payer_currency) ? array_values((array) $rawFilter->payer_currency) : null;
+            $summary->filter = $filter;
+        }
+
+        foreach (($response->dcc_bin_ranges ?? []) as $rawRange) {
+            $rangeData = self::normalizeToObject($rawRange);
+            $summary->result[] = (object) [
+                'lowPrefixNumber' => $rangeData->low_prefix_number ?? null,
+                'highPrefixNumber' => $rangeData->high_prefix_number ?? null,
+                'status' => $rangeData->status ?? null,
+            ];
+        }
+
+        return $summary;
     }
 
     /**
@@ -782,19 +1027,50 @@ class GpApiMapping
         $summary->caseId = $response->id;
         $summary->caseIdTime = !empty($response->time_created) ? new DateTime($response->time_created) : null;
         $summary->caseStatus = $response->status;
+        $summary->statusTimeCreated = !empty($response->status_time_created)
+            ? new DateTime($response->status_time_created)
+            : null;
         $summary->caseStage = $response->stage;
         $summary->disputeStageTime =
             (!empty($response->stage_time_created) ? new DateTime($response->stage_time_created) : null);
         $summary->caseAmount = StringUtils::toAmount($response->amount, $response->currency ?? null);
         $summary->caseCurrency = $response->currency;
+        $summary->merchantId = $response->merchant_id ?? null;
+        $summary->accountId = $response->account_id ?? null;
+        $summary->accountName = $response->account_name ?? null;
+        $summary->acquirerCode = $response->acquirer_code ?? null;
+            $summary->merchantAmount =
+                isset($response->merchant_amount) && $response->merchant_amount !== '' ?
+                    StringUtils::toAmount($response->merchant_amount, $response->merchant_currency ?? null)
+                    : null;
+        $summary->merchantCurrency = $response->merchant_currency ?? null;
+            $summary->netFinancialAmount =
+                isset($response->net_financial_amount) && $response->net_financial_amount !== '' ?
+                    StringUtils::toAmount($response->net_financial_amount, $response->net_financial_currency ?? null)
+                    : null;
+        $summary->netFinancialCurrency = $response->net_financial_currency ?? null;
+        $summary->netFinancialFunding = $response->net_financial_funding ?? null;
 
         if (isset($response->system)) {
             $system = $response->system;
-            $summary->caseMerchantId = $system->mid ?? null;
+            $summary->caseMerchantId = $system->mid ?? ($response->merchant_id ?? null);
+            $summary->merchantId = $response->merchant_id ?? ($system->mid ?? null);
             $summary->merchantHierarchy = $system->hierarchy ?? null;
-            $summary->merchantName = !empty($system->name) ? $system->name : null;
+            $summary->merchantName = $response->merchant_name ?? ($system->name ?? null);
+            $summary->merchantDbaName = $system->dba ?? null;
+            $summary->merchantDeviceIdentifier = $system->tid ?? null;
+            $summary->systemTid = $system->tid ?? null;
+            $summary->systemDba = $system->dba ?? null;
+        } else {
+            $summary->caseMerchantId = $response->merchant_id ?? null;
+            $summary->merchantId = $response->merchant_id ?? null;
+            $summary->merchantName = $response->merchant_name ?? null;
+            $summary->merchantHierarchy = null;
+            $summary->merchantDbaName = null;
+            $summary->merchantDeviceIdentifier = null;
         }
 
+        $card = null;
         if (!empty($response->payment_method->card)) {
             $card = $response->payment_method->card;
             $summary->transactionMaskedCardNumber = $card->number ?? null;
@@ -805,10 +1081,19 @@ class GpApiMapping
             $summary->transactionAmount = StringUtils::toAmount($response->transaction->amount, $response->transaction->currency ?? null);
             $summary->transactionCurrency = $response->transaction->currency;
             $summary->transactionReferenceNumber = $response->transaction->reference;
-            if (isset($response->transaction->payment_method->card)) {
-                $card = $response->transaction->payment_method->card;
-                $summary->transactionMaskedCardNumber = $card->masked_number_first6last4 ?? null;
-                $summary->transactionAuthCode = $card->authcode;
+            $summary->transactionOrderReference =
+                $response->transaction->order->reference ?? ($response->order->reference ?? null);
+
+            $transactionPaymentMethod = $response->transaction->payment_method ?? (
+                !empty($response->transaction->provider) && !empty($response->transaction->provider->payment_method)
+                    ? $response->transaction->provider->payment_method
+                    : null
+            );
+
+            if (!empty($transactionPaymentMethod->card)) {
+                $card = $transactionPaymentMethod->card;
+                $summary->transactionMaskedCardNumber = $card->masked_number_first6last4 ?? ($card->number ?? null);
+                $summary->transactionAuthCode = $card->authcode ?? null;
                 $summary->transactionBrandReference = $card->brand_reference ?? null;
             }
         }
@@ -854,7 +1139,10 @@ class GpApiMapping
             }
         }
         $summary->orderId = $response->order->reference ?? null;
-        $summary->responseCode = $response->action->result_code ?? null;
+        $summary->responseCode = self::normalizeResponseCode(
+            $response->action->result_code ?? $response->result_code ?? $response->response_code ?? null,
+            $response->status ?? null
+        );
 
         return $summary;
     }
@@ -902,13 +1190,25 @@ class GpApiMapping
         $summary->version = !empty($response->version) ? $response->version : null;
         $summary->httpResponseCode = !empty($response->http_response_code) ? $response->http_response_code : null;
         $summary->responseCode = !empty($response->response_code) ? $response->response_code : null;
+        $summary->responseDetailedCode = !empty($response->response_detailed_code) ? $response->response_detailed_code : null;
+        $summary->responseDetailedMessage = !empty($response->response_detailed_message) ? $response->response_detailed_message : null;
         $summary->appId = !empty($response->app_id) ? $response->app_id : null;
         $summary->appName = !empty($response->app_name) ? $response->app_name : null;
+        $summary->email = !empty($response->email) ? $response->email : null;
+        $summary->merchantId = !empty($response->merchant_id) ? $response->merchant_id : null;
         $summary->merchantName = !empty($response->merchant_name) ? $response->merchant_name : null;
         $summary->accountName = !empty($response->account_name) ? $response->account_name : null;
         $summary->accountId = !empty($response->account_id) ? $response->account_id : null;
-        $summary->rawRequest = $response->message_received ?? null;
-        $summary->rawResponse = $response->message_sent ?? null;
+        $summary->resourceParentId = !empty($response->resource_parent_id) ? $response->resource_parent_id : null;
+        $summary->resourceRequestUrl = !empty($response->resource_request_url) ? $response->resource_request_url : null;
+        $summary->sourceLocation = !empty($response->source_location) ? $response->source_location : null;
+        $summary->destinationLocation = !empty($response->destination_location) ? $response->destination_location : null;
+        $summary->rawRequest = $summary->messageReceived = !empty($response->message_received) ? $response->message_received : null;
+        $summary->rawResponse = $summary->messageSent = !empty($response->message_sent) ? $response->message_sent : null;
+        $summary->metrics = !empty($response->metrics) ? $response->metrics : null;
+        $summary->totalTimeMilliseconds = !empty($response->total_time_milliseconds) ? $response->total_time_milliseconds : null;
+        $summary->totalTimeDownstreamMilliseconds = !empty($response->total_time_downstream_milliseconds) ? $response->total_time_downstream_milliseconds : null;
+        $summary->action = self::mapActionMetadata($response->action ?? null);
 
         return $summary;
     }
@@ -927,7 +1227,10 @@ class GpApiMapping
         $riskAssessment->accountId = $response->account_id ?? null;
         $riskAssessment->accountName = $response->account_name ?? null;
         $riskAssessment->reference = $response->reference ?? null;
-        $riskAssessment->responseCode = $response->action->result_code ?? null;
+        $riskAssessment->responseCode = self::normalizeResponseCode(
+            $response->action->result_code ?? $response->result_code ?? $response->response_code ?? null,
+            $response->status ?? null
+        );
         $riskAssessment->responseMessage = $response->result ?? null;
         if (isset($response->payment_method->card)) {
             $riskAssessment->cardDetails = self::mapCardDetails($response->payment_method->card);
@@ -962,7 +1265,18 @@ class GpApiMapping
         $card->avsAddressResponse = $paymentMethod->avs_address_result ?? null;
         $card->avsResponseCode = $paymentMethod->avs_postal_code_result ?? null;
         $card->tagResponse = $paymentMethod->tag_response ?? null;
+        $card->entryMode = $paymentMethod->entry_mode ?? null;
         $card->funding = $paymentMethod->funding ?? null;
+        $card->track = $paymentMethod->track ?? null;
+        $card->trackNumber = $paymentMethod->track_number ?? $paymentMethod->trackNumber ?? null;
+        $card->tag = $paymentMethod->tag ?? null;
+        $card->chipCondition = $paymentMethod->chip_condition ?? null;
+        $card->pinBlock = $paymentMethod->pin_block ?? null;
+        if (!empty($paymentMethod->encryption)) {
+            $card->encryption = is_object($paymentMethod->encryption)
+                ? $paymentMethod->encryption
+                : (object) $paymentMethod->encryption;
+        }
 
         return $card;
     }
@@ -974,11 +1288,48 @@ class GpApiMapping
     public static function mapResponseSecure3D(object $response): Transaction
     {
         $transaction = new Transaction();
-        $threeDSecure = new ThreeDSecure();
-        $threeDSecure->serverTransactionId = $response->id;
+        $transaction->threeDSecure = self::mapAuthenticationResource($response);
 
-        if (!empty($response->three_ds->message_version)) {
-            $messageVersion = $response->three_ds->message_version;
+        return $transaction;
+    }
+
+    public static function mapAuthenticationListResponse(object $response): PagedResult
+    {
+        $pageInfo = self::setPagingInfo($response);
+        foreach ($response->authentications ?? [] as $authentication) {
+            $pageInfo->result[] = self::mapAuthenticationResource($authentication);
+        }
+
+        return $pageInfo;
+    }
+
+    private static function mapAuthenticationResource(object $response): ThreeDSecure
+    {
+        $threeDSecure = new ThreeDSecure();
+        $threeDs = $response->three_ds ?? (object) [];
+        $notifications = $response->notifications ?? (object) [];
+
+        $threeDSecure->action = self::mapActionMetadata($response->action ?? null);
+        $threeDSecure->actionCreateId = $response->action_create_id ?? null;
+        $threeDSecure->accountId = $response->account_id ?? null;
+        $threeDSecure->accountName = $response->account_name ?? null;
+        $threeDSecure->channel = $response->channel ?? null;
+        $threeDSecure->context = $response->context ?? null;
+        $threeDSecure->country = $response->country ?? null;
+        $threeDSecure->id = $response->id ?? null;
+        $threeDSecure->merchantId = $response->merchant_id ?? null;
+        $threeDSecure->merchantName = $response->merchant_name ?? null;
+        $threeDSecure->paymentMethod = $response->payment_method ?? null;
+        $threeDSecure->reference = $response->reference ?? null;
+        $threeDSecure->serverTransactionId = $response->id ?? null;
+        $threeDSecure->status = $response->status ?? null;
+        $threeDSecure->system = $response->system ?? null;
+        $threeDSecure->timeCreated = $response->time_created ?? null;
+        $threeDSecure->timeLastUpdated = $response->time_last_updated ?? null;
+        $threeDSecure->transactionType = $response->transaction_type ?? null;
+
+        if (!empty($threeDs->message_version)) {
+            $messageVersion = $threeDs->message_version;
             $version = match (substr($messageVersion, 0, 2)) {
                 '1.' => Secure3dVersion::ONE,
                 '2.' => Secure3dVersion::TWO,
@@ -987,43 +1338,44 @@ class GpApiMapping
             $threeDSecure->messageVersion = $messageVersion;
             $threeDSecure->setVersion($version);
         }
-        $threeDSecure->status = $response->status;
-        $threeDSecure->directoryServerStartVersion = !empty($response->three_ds->ds_protocol_version_start) ?
-            $response->three_ds->ds_protocol_version_start : null;
-        $threeDSecure->directoryServerEndVersion = !empty($response->three_ds->ds_protocol_version_end) ?
-            $response->three_ds->ds_protocol_version_end : null;
-        $threeDSecure->acsStartVersion = !empty($response->three_ds->acs_protocol_version_start) ?
-            $response->three_ds->acs_protocol_version_start : null;
-        $threeDSecure->acsEndVersion = !empty($response->three_ds->acs_protocol_version_end) ?
-            $response->three_ds->acs_protocol_version_end : null;
-        $threeDSecure->enrolled = !empty($response->three_ds->enrolled_status) ?
-            $response->three_ds->enrolled_status : null;
-        $threeDSecure->eci = !empty($response->three_ds->eci) ? $response->three_ds->eci : null;
-        $threeDSecure->acsInfoIndicator = !empty($response->three_ds->acs_info_indicator) ?
-            $response->three_ds->acs_info_indicator : null;
-        $threeDSecure->acsReferenceNumber = $response->three_ds->acs_reference_number ?? null;
-        $threeDSecure->providerServerTransRef = $response->three_ds->server_trans_ref ?? null;
-        $threeDSecure->challengeMandated = !empty($response->three_ds->challenge_status) &&
-            $response->three_ds->challenge_status == 'MANDATED';
-        $threeDSecure->payerAuthenticationRequest = !empty($response->three_ds->method_data->encoded_method_data) ?
-            $response->three_ds->method_data->encoded_method_data : null;
-        $threeDSecure->issuerAcsUrl = !empty($response->three_ds->method_url) ? $response->three_ds->method_url : null;
-        $threeDSecure->authenticationSource = !empty($response->three_ds->authentication_source) ?
-            $response->three_ds->authentication_source : null;
+        $threeDSecure->directoryServerStartVersion = !empty($threeDs->ds_protocol_version_start) ?
+            $threeDs->ds_protocol_version_start : null;
+        $threeDSecure->directoryServerEndVersion = !empty($threeDs->ds_protocol_version_end) ?
+            $threeDs->ds_protocol_version_end : null;
+        $threeDSecure->acsStartVersion = !empty($threeDs->acs_protocol_version_start) ?
+            $threeDs->acs_protocol_version_start : null;
+        $threeDSecure->acsEndVersion = !empty($threeDs->acs_protocol_version_end) ?
+            $threeDs->acs_protocol_version_end : null;
+        $threeDSecure->enrolled = !empty($threeDs->enrolled_status) ?
+            $threeDs->enrolled_status : null;
+        $threeDSecure->eci = !empty($threeDs->eci) ? $threeDs->eci : null;
+        $threeDSecure->acsInfoIndicator = !empty($threeDs->acs_info_indicator) ?
+            $threeDs->acs_info_indicator : null;
+        $threeDSecure->acsReferenceNumber = $threeDs->acs_reference_number ?? null;
+        $threeDSecure->providerServerTransRef = $threeDs->server_trans_ref ?? null;
+        $threeDSecure->challengeMandated = !empty($threeDs->challenge_status) &&
+            $threeDs->challenge_status == 'MANDATED';
+        $threeDSecure->payerAuthenticationRequest = !empty($threeDs->method_data->encoded_method_data) ?
+            $threeDs->method_data->encoded_method_data : null;
+        $threeDSecure->issuerAcsUrl = !empty($threeDs->method_url) ? $threeDs->method_url : null;
+        $threeDSecure->authenticationSource = !empty($threeDs->authentication_source) ?
+            $threeDs->authentication_source : ($response->source ?? null);
+        $threeDSecure->redirectUrl = $threeDs->redirect_url ?? null;
+        $threeDSecure->cardHolderResponseInfo = $threeDs->cardholder_response_info ?? null;
 
         if (
-            !empty($response->three_ds->acs_challenge_request_url) &&
+            !empty($threeDs->acs_challenge_request_url) &&
             $threeDSecure->status == Secure3dStatus::CHALLENGE_REQUIRED
         ) {
-            $threeDSecure->issuerAcsUrl = $response->three_ds->acs_challenge_request_url;
-            $threeDSecure->payerAuthenticationRequest = !empty($response->three_ds->challenge_value) ?
-                $response->three_ds->challenge_value : null;
+            $threeDSecure->issuerAcsUrl = $threeDs->acs_challenge_request_url;
+            $threeDSecure->payerAuthenticationRequest = !empty($threeDs->challenge_value) ?
+                $threeDs->challenge_value : null;
         }
         if (
             $threeDSecure->authenticationSource == AuthenticationSource::MOBILE_SDK &&
-            !empty($response->three_ds->mobile_data)
+            !empty($threeDs->mobile_data)
         ) {
-            $mobileData = $response->three_ds->mobile_data;
+            $mobileData = $threeDs->mobile_data;
             $threeDSecure->payerAuthenticationRequest = !empty($mobileData->acs_signed_content) ?
                 $mobileData->acs_signed_content : null;
             $threeDSecure->acsInterface = !empty($mobileData->acs_rendering_type->acs_interface) ?
@@ -1032,33 +1384,43 @@ class GpApiMapping
                 $mobileData->acs_rendering_type->acs_ui_template : null;
         }
 
-        $threeDSecure->setCurrency($response->currency);
-        $threeDSecure->setAmount(StringUtils::toAmount($response->amount, $response->currency ?? null));
-        $threeDSecure->authenticationValue = !empty($response->three_ds->authentication_value) ?
-            $response->three_ds->authentication_value : null;
-        $threeDSecure->directoryServerTransactionId = !empty($response->three_ds->ds_trans_ref) ?
-            $response->three_ds->ds_trans_ref : null;
-        $threeDSecure->acsTransactionId = !empty($response->three_ds->acs_trans_ref) ?
-            $response->three_ds->acs_trans_ref : null;
-        $threeDSecure->statusReason = !empty($response->three_ds->status_reason) ?
-            $response->three_ds->status_reason : null;
-        $threeDSecure->messageCategory = !empty($response->three_ds->message_category) ?
-            $response->three_ds->message_category : null;
-        $threeDSecure->messageType = !empty($response->three_ds->message_type) ?
-            $response->three_ds->message_type : null;
-        $threeDSecure->sessionDataFieldName = !empty($response->three_ds->session_data_field_name) ?
-            $response->three_ds->session_data_field_name : null;
-        $threeDSecure->challengeReturnUrl = !empty($response->notifications->challenge_return_url) ?
-            $response->notifications->challenge_return_url : null;
-        $threeDSecure->liabilityShift = !empty($response->three_ds->liability_shift) ?
-            $response->three_ds->liability_shift : null;
-        $threeDSecure->authenticationType = !empty($response->three_ds->authentication_request_type) ?
-            $response->three_ds->authentication_request_type : null;
-        $threeDSecure->decoupledResponseIndicator = $response->three_ds->acs_decoupled_response_indicator ?? null;
-        $threeDSecure->whitelistStatus = !empty($response->three_ds->whitelist_status) ?
-            $response->three_ds->whitelist_status : null;
-        if (!empty($response->three_ds->message_extension)) {
-            foreach ($response->three_ds->message_extension as $messageExtension) {
+        if (isset($response->currency)) {
+            $threeDSecure->setCurrency($response->currency);
+        }
+        if (isset($response->amount)) {
+            $threeDSecure->setAmount(StringUtils::toAmount($response->amount, $response->currency ?? null));
+        }
+        $threeDSecure->authenticationValue = !empty($threeDs->authentication_value) ?
+            $threeDs->authentication_value : null;
+        $threeDSecure->directoryServerTransactionId = !empty($threeDs->ds_trans_ref) ?
+            $threeDs->ds_trans_ref : null;
+        $threeDSecure->acsTransactionId = !empty($threeDs->acs_trans_ref) ?
+            $threeDs->acs_trans_ref : null;
+        $threeDSecure->statusReason = !empty($threeDs->status_reason) ?
+            $threeDs->status_reason : null;
+        $threeDSecure->messageCategory = !empty($threeDs->message_category) ?
+            $threeDs->message_category : null;
+        $threeDSecure->messageType = !empty($threeDs->message_type) ?
+            $threeDs->message_type : null;
+        $threeDSecure->sessionDataFieldName = !empty($threeDs->session_data_field_name) ?
+            $threeDs->session_data_field_name : null;
+        $threeDSecure->challengeReturnUrl = !empty($notifications->challenge_return_url) ?
+            $notifications->challenge_return_url : ($notifications->return_url ?? null);
+        $threeDSecure->threeDSMethodReturnUrl = $notifications->three_ds_method_return_url ?? null;
+        $threeDSecure->statusUrl = $notifications->status_url ?? null;
+        $threeDSecure->decoupledChallengeReturnUrl = $notifications->decoupled_challenge_return_url ?? null;
+        $threeDSecure->liabilityShift = !empty($threeDs->liability_shift) ?
+            $threeDs->liability_shift : null;
+        $threeDSecure->authenticationType = !empty($threeDs->authentication_type) ?
+            $threeDs->authentication_type : (
+                !empty($threeDs->authentication_request_type) ?
+                    $threeDs->authentication_request_type : null
+            );
+        $threeDSecure->decoupledResponseIndicator = $threeDs->acs_decoupled_response_indicator ?? null;
+        $threeDSecure->whitelistStatus = !empty($threeDs->whitelist_status) ?
+            $threeDs->whitelist_status : null;
+        if (!empty($threeDs->message_extension)) {
+            foreach ($threeDs->message_extension as $messageExtension) {
                 $msgItem = new MessageExtension();
                 $msgItem->criticalityIndicator = !empty($messageExtension->criticality_indicator) ?
                     $messageExtension->criticality_indicator : null;
@@ -1070,22 +1432,43 @@ class GpApiMapping
             }
         }
 
-        $transaction->threeDSecure = $threeDSecure;
-
-        return $transaction;
+        return $threeDSecure;
     }
 
     private static function setPagingInfo($response): PagedResult
     {
         $pageInfo = new PagedResult();
-        $pageInfo->totalRecordCount = !empty($response->total_count) ? $response->total_count :
-            (!empty($response->total_record_count) ? $response->total_record_count : null);
-        $pageInfo->pageSize = !empty($response->paging->page_size) ? $response->paging->page_size : null;
-        $pageInfo->page = !empty($response->paging->page) ? $response->paging->page : null;
-        $pageInfo->order = !empty($response->paging->order) ? $response->paging->order : null;
-        $pageInfo->orderBy = !empty($response->paging->order_by) ? $response->paging->order_by : null;
+        $pageInfo->accountId = $response->account_id ?? null;
+        $pageInfo->accountName = $response->account_name ?? null;
+        $pageInfo->totalRecordCount = $response->total_count ?? $response->total_record_count ?? null;
+        $pageInfo->currentPageSize = $response->current_page_size ?? null;
+        $pageInfo->pageSize = $response->paging?->page_size ?? null;
+        $pageInfo->page = $response->paging?->page ?? null;
+        $pageInfo->order = $response->paging?->order ?? null;
+        $pageInfo->orderBy = $response->paging?->order_by ?? null;
+        $pageInfo->merchantId = $response->merchant_id ?? null;
+        $pageInfo->merchantName = $response->merchant_name ?? null;
+        $pageInfo->accountId = $response->account_id ?? null;
+        $pageInfo->accountName = $response->account_name ?? null;
+        $pageInfo->filter = $response->filter ?? null;
+        $pageInfo->action = self::mapActionMetadata($response->action ?? null);
 
         return $pageInfo;
+    }
+
+    private static function mapActionMetadata(?object $raw): ?Action
+    {
+        if ($raw === null) {
+            return null;
+        }
+        $action = new Action();
+        $action->id = $raw->id ?? '';
+        $action->type = $raw->type ?? '';
+        $action->timeCreated = $raw->time_created ?? '';
+        $action->resultCode = $raw->result_code ?? '';
+        $action->appId = $raw->app_id ?? '';
+        $action->appName = $raw->app_name ?? '';
+        return $action;
     }
 
     /**
@@ -1143,6 +1526,7 @@ class GpApiMapping
         $apm->versionReference = $paymentMethodApm->version_reference ?? null;
         $apm->buildReference = $paymentMethodApm->build_reference ?? null;
         $apm->category = $paymentMethodApm->category ?? null;
+        $apm->paymentPlan = $paymentMethodApm->payment_plan ?? null;
         if (!empty($paymentMethodApm->terms)) {
             $terms = new Terms();
             $terms->id = $paymentMethodApm->terms->id ?? null;
@@ -1368,12 +1752,22 @@ class GpApiMapping
         $merchantAccountSummary->type = $account->type ?? null;
         $merchantAccountSummary->name = $account->name ?? null;
         $merchantAccountSummary->status = $account->status ?? null;
+        $merchantAccountSummary->merchantId = $account->merchant_id ?? null;
+        $merchantAccountSummary->merchantName = $account->merchant_name ?? null;
+        $merchantAccountSummary->timeCreated = !empty($account->time_created) ? new DateTime($account->time_created) : null;
+        $merchantAccountSummary->timeLastUpdated = !empty($account->time_last_updated) ? new DateTime($account->time_last_updated) : null;
+        $merchantAccountSummary->emailId = $account->email_id ?? null;
+        $merchantAccountSummary->cardReplacementReason = $account->card_replacement_reason ?? null;
         $merchantAccountSummary->permissions = $account->permissions ?? null;
         $merchantAccountSummary->countries = $account->countries ?? null;
         $merchantAccountSummary->channels = $account->channels ?? null;
         $merchantAccountSummary->currencies = $account->currencies ?? null;
         $merchantAccountSummary->paymentMethods = $account->payment_methods ?? null;
         $merchantAccountSummary->configurations = $account->configurations ?? null;
+        $merchantAccountSummary->statusDescription = $account->status_description ?? null;
+        $merchantAccountSummary->capabilities = $account->capabilities ?? null;
+        $merchantAccountSummary->paymentProcessingStatistics = $account->payment_processing_statistics ?? null;
+        $merchantAccountSummary->action = self::mapActionMetadata($account->action ?? null);
         if (!empty($account->addresses)) {
             $addresses = new AddressCollection();
             foreach ($account->addresses as $key => $address) {
@@ -1429,7 +1823,10 @@ class GpApiMapping
                 $doc->format = $response->format;
                 $doc->category = $response->function;
                 $user->document = $doc;
-                $user->responseCode = $response->action->result_code ?? null;
+                $user->responseCode = self::normalizeResponseCode(
+                    $response->action->result_code ?? $response->result_code ?? $response->response_code ?? null,
+                    $response->status ?? null
+                );
                 return $user;
             case self::MERCHANT_CREATE:
             case self::MERCHANT_EDIT:
@@ -1443,7 +1840,10 @@ class GpApiMapping
                 $user->timeCreate = !empty($response->time_created) ? new DateTime($response->time_created) : null;
                 $user->timeLastUpdated = !empty($response->time_last_updated) ?
                     new DateTime($response->time_last_updated) : null;
-                $user->responseCode = $response->action->result_code ?? null;
+                $user->responseCode = self::normalizeResponseCode(
+                    $response->action->result_code ?? $response->result_code ?? $response->response_code ?? null,
+                    $response->status ?? null
+                );
                 $user->statusDescription = $response->status_description ?? null;
                 $user->email = $response->email ?? null;
                 if (!empty($response->address)) {
@@ -1483,7 +1883,10 @@ class GpApiMapping
                 $funds->currency = $response->currency ?? null;
                 $funds->account = new UserAccount($response->account_id, $response->account_name);
                 $user->fundsAccountDetails = $funds;
-                $user->responseCode = $response->action->result_code;
+                $user->responseCode = self::normalizeResponseCode(
+                    $response->action->result_code ?? $response->result_code ?? $response->response_code ?? null,
+                    $response->status ?? null
+                );
 
                 return $user;
             default:
@@ -1531,7 +1934,10 @@ class GpApiMapping
     {
         $fp->resourceId = $response->id;
         $fp->status = $fp->responseMessage = $response->status;
-        $fp->responseCode = $response->action->result_code;
+        $fp->responseCode = self::normalizeResponseCode(
+            $response->action->result_code ?? $response->result_code ?? $response->response_code ?? null,
+            $response->status ?? null
+        );
     }
 
     /**

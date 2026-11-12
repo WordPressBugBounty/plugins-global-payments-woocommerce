@@ -17,9 +17,12 @@ use GlobalPayments\Api\Entities\Enums\{
     AddressType,
     AlternativePaymentType,
     BankPaymentType,
+    CashpressoPaymentPlan,
+    CashpressoShippingMethod,
     CaptureMode,
     CardType,
     Channel,
+    DccRateType,
     DigitalWalletTokenFormat,
     EncyptedMobileType,
     EntryMethod,
@@ -51,7 +54,7 @@ use GlobalPayments\Api\PaymentMethods\{
 };
 use GlobalPayments\Api\PaymentMethods\Interfaces\{ICardData, IEncryptable, ITokenizable, ITrackData};
 use GlobalPayments\Api\ServiceConfigs\Gateways\GpApiConfig;
-use GlobalPayments\Api\Utils\{CardUtils, EmvUtils, GenerationUtils, StringUtils};
+use GlobalPayments\Api\Utils\{CardUtils, CountryUtils, EmvUtils, GenerationUtils, StringUtils};
 use GlobalPayments\Api\Utils\Logging\ProtectSensitiveData;
 
 class GpApiAuthorizationRequestBuilder implements IRequestBuilder
@@ -83,6 +86,8 @@ class GpApiAuthorizationRequestBuilder implements IRequestBuilder
     public function buildRequest(BaseBuilder $builder, mixed $config): mixed
     {
         $this->builder = $builder;
+        $endpoint = '';
+        $verb = '';
         $requestData = null;
         /** @var AuthorizationBuilder $builder */
         switch ($builder->transactionType) {
@@ -94,40 +99,17 @@ class GpApiAuthorizationRequestBuilder implements IRequestBuilder
                 $requestData =  $this->createFromAuthorizationBuilder($builder, $config);
                 break;
             case TransactionType::VERIFY:
+                if ($this->isClickToPayDecryptRequest($builder)) {
+                    $endpoint = GpApiRequest::DECRYPT_ENDPOINT;
+                    $verb = 'POST';
+                    $requestData = $this->createClickToPayDecryptRequest($builder, $config);
+                    break;
+                }
+
                 if ($builder->requestMultiUseToken && empty($builder->paymentMethod->token)) {
                     $endpoint = GpApiRequest::PAYMENT_METHODS_ENDPOINT;
                     $verb = 'POST';
-                    $requestData = [];
-                    $requestData['account_name'] = $config->accessTokenInfo->tokenizationAccountName;
-                    $requestData['account_id'] = $config->accessTokenInfo->tokenizationAccountID;
-                    $requestData['name'] = $builder->description ?: "";
-                    $requestData['payer'] = ['id' => $builder->customerId ?: ""];
-                    $requestData['reference'] = $builder->clientTransactionId ?: GenerationUtils::generateOrderId();
-                    $requestData['usage_mode'] = $builder->paymentMethodUsageMode;
-                    $requestData['fingerprint_mode'] =
-                        (!empty($builder->customerData) & !empty($builder->customerData->deviceFingerPrint) ?
-                            $builder->customerData->deviceFingerPrint : null);
-                    $card = new Card();
-                    $builderCard = $builder->paymentMethod;
-                    $card->number = $builderCard->number;
-                    $card->expiry_month = !empty($builderCard->expMonth) ?
-                        str_pad((string) $builderCard->expMonth, 2, '0', STR_PAD_LEFT) : null;
-                    $card->expiry_year = !empty($builderCard->expYear) ?
-                        substr(
-                            str_pad((string) $builderCard->expYear, 4, '0', STR_PAD_LEFT),
-                            2,
-                            2
-                        ) : null;
-                    $card->cvv = $builderCard->cvn;
-                    $requestData['card'] = $card;
-                    $this->maskedValues = ProtectSensitiveData::hideValues(
-                        [
-                            'card.expiry_month' => $card->expiry_month,
-                            'card.expiry_year' => $card->expiry_year,
-                            'card.cvv' => $card->cvv
-                        ]
-                    );
-                    $this->maskedValues = ProtectSensitiveData::hideValue('card.number', $card->number, 4, 6);
+                    $requestData = $this->createPaymentMethodRequest($builder, $config);
                 } else {
                     $endpoint = GpApiRequest::VERIFICATIONS_ENDPOINT;
                     $verb = 'POST';
@@ -137,11 +119,13 @@ class GpApiAuthorizationRequestBuilder implements IRequestBuilder
             case TransactionType::DCC_RATE_LOOKUP:
                 $endpoint = GpApiRequest::DCC_ENDPOINT;
                 $verb = 'POST';
+                $requestData = [];
                 $this->setTransactionProcessingAccount($requestData, $config);
+                $requestData['transaction_type'] = $this->getDccLookupTransactionType($builder);
                 $requestData['channel'] = $config->channel;
                 $requestData['amount'] = StringUtils::toNumeric($builder->amount, $builder->currency);
                 $requestData['currency'] = $builder->currency;
-                $requestData['country'] = $config->country;
+                $requestData['country'] = $this->resolveRequestCountry($builder, $config);
                 $requestData['reference'] = !empty($builder->clientTransactionId) ?
                     $builder->clientTransactionId : GenerationUtils::getGuid();
                 $requestData['payment_method'] = $this->createPaymentMethodParam($builder, $config);
@@ -160,9 +144,13 @@ class GpApiAuthorizationRequestBuilder implements IRequestBuilder
                     $requestData['name'] = $payByLink->name;
                     $requestData['description'] = $builder->description;
                     $requestData['shippable'] = StringUtils::boolToYesNo($payByLink->isShippable) ? StringUtils::boolToYesNo($payByLink->isShippable) : "NO";
+                    $expirationDate = $payByLink->expirationDate;
                     $requestData['shipping_amount'] = StringUtils::toNumeric($payByLink->shippingAmount, $builder->currency);
                     $requestData['expiration_date'] = !empty($payByLink->expirationDate) ?
-                        (new \DateTime($payByLink->expirationDate))->format('Y-m-d\TH:i:s\Z') : null;
+                        ($expirationDate instanceof \DateTimeInterface
+                            ? $expirationDate->format('Y-m-d\TH:i:s\Z')
+                            : (new \DateTime((string) $expirationDate))->format('Y-m-d\TH:i:s\Z'))
+                        : null;
                     //@TODO - remove status when GP-API will fix the issue (status shouldn't be sent in request)
                     $requestData['status'] = PayByLinkStatus::ACTIVE;
                     $requestData['images'] = $payByLink->images;
@@ -184,7 +172,7 @@ class GpApiAuthorizationRequestBuilder implements IRequestBuilder
                 if (!$builder->paymentMethod instanceof FundsAccount) {
                     throw new UnsupportedTransactionException("Payment method doesn't support funds transfers");
                 }
-                $endpoint = GpApiRequest::MERCHANT_MANAGEMENT_ENDPOINT . '/' . $builder->paymentMethod->merchantId .
+                $endpoint = $config->getMerchantUrl($builder->paymentMethod->merchantId) .
                     GpApiRequest::TRANSFER_ENDPOINT;
                 $verb = 'POST';
                 $requestData = [
@@ -320,6 +308,35 @@ class GpApiAuthorizationRequestBuilder implements IRequestBuilder
                             $requestData['order']['reference'] = $order->reference;
                         }
 
+                        if (!empty($order->shippingMethod)) {
+                            $requestData['order']['shipping_method'] = $order->shippingMethod;
+                        }
+
+                        if (!empty($order->shippingDate)) {
+                            $requestData['order']['shipping_date'] = $order->shippingDate;
+                        }
+
+                        if (!empty($order->items)) {
+                            $requestData['order']['items'] = $order->items;
+
+                            $taxTotalAmount = 0;
+                            foreach ($order->items as $item) {
+                                if (
+                                    is_array($item)
+                                    && array_key_exists('tax_amount', $item)
+                                    && $item['tax_amount'] !== null
+                                    && trim((string) $item['tax_amount']) !== ''
+                                ) {
+                                    $taxTotalAmount += StringUtils::toNumeric(
+                                        $item['tax_amount'],
+                                        $order->currency ?? $builder->currency
+                                    );
+                                }
+                            }
+
+                            $requestData['order']['tax_amount'] = (string) $taxTotalAmount;
+                        }
+
                         // Add surcharge array if available
                         if (!empty($order->surcharge) && is_array($order->surcharge)) {
                             $surchargeArray = [];
@@ -407,6 +424,10 @@ class GpApiAuthorizationRequestBuilder implements IRequestBuilder
                                         ? StringUtils::boolToYesNo($apm->addressOverride) 
                                         : 'NO',
                                 ];
+                                if (!empty($apm->configurations)) {
+                                    $requestData['order']['payment_method_configuration']['apm']['configurations'] =
+                                        $apm->configurations;
+                                }
                             }
                             // Storage mode
                             if (!empty($paymentMethodConfig->storageMode)) {
@@ -418,9 +439,10 @@ class GpApiAuthorizationRequestBuilder implements IRequestBuilder
                             }
                         }
                         
-                        // Shipping address 
-                        if ($builder->hostedPaymentData->payer && $builder->hostedPaymentData->payer->shippingAddress) {
-                            $shippingAddr = $builder->hostedPaymentData->payer->shippingAddress;
+                        // Shipping address (HPPBuilder stores this on order; keep payer fallback for compatibility)
+                        $shippingAddr = $builder->hostedPaymentData->order?->shippingAddress
+                            ?? ($builder->hostedPaymentData->payer?->shippingAddress ?? null);
+                        if ($shippingAddr) {
                             $requestData['order']['shipping_address'] = [
                                 'line_1' => $shippingAddr->streetAddress1 ?? "",
                                 'line_2' => $shippingAddr->streetAddress2 ?? "",
@@ -436,9 +458,10 @@ class GpApiAuthorizationRequestBuilder implements IRequestBuilder
                             }
                         }
                         
-                        // Shipping phone 
-                        if ($builder->hostedPaymentData->payer && $builder->hostedPaymentData->payer->shippingPhone) {
-                            $shippingPhone = $builder->hostedPaymentData->payer->shippingPhone;
+                        // Shipping phone (HPPBuilder stores this on order; keep payer fallback for compatibility)
+                        $shippingPhone = $builder->hostedPaymentData->order?->shippingPhone
+                            ?? ($builder->hostedPaymentData->payer?->shippingPhone ?? null);
+                        if ($shippingPhone) {
                             $requestData['order']['shipping_phone'] = [
                                 'country_code' => $shippingPhone->countryCode ?? null,
                                 'subscriber_number' => $shippingPhone->number ?? null
@@ -545,13 +568,107 @@ class GpApiAuthorizationRequestBuilder implements IRequestBuilder
         $requestBody['reference'] = !empty($builder->clientTransactionId) ?
             $builder->clientTransactionId : GenerationUtils::getGuid();
         $requestBody['currency'] = $builder->currency;
-        $requestBody['country'] = $config->country;
+        $requestBody['country'] = $this->resolveRequestCountry($builder, $config);
         $requestBody['payment_method'] = $this->createPaymentMethodParam($builder, $config);
         if (!empty($builder->storedCredential)) {
             $this->setRequestStoredCredentials($builder->storedCredential, $requestBody, $builder);
         }
 
         return $requestBody;
+    }
+
+    private function createPaymentMethodRequest(AuthorizationBuilder $builder, GpApiConfig $config): array
+    {
+        $requestData = [];
+        $requestData['account_name'] = $config->accessTokenInfo->tokenizationAccountName;
+        $requestData['account_id'] = $config->accessTokenInfo->tokenizationAccountID;
+        $requestData['name'] = $builder->description ?: "";
+        $requestData['payer'] = ['id' => $builder->customerId ?: ""];
+        $requestData['reference'] = $builder->clientTransactionId ?: GenerationUtils::generateOrderId();
+        $requestData['usage_mode'] = $builder->paymentMethodUsageMode ?? null;
+        $requestData['fingerprint_mode'] =
+            (!empty($builder->customerData) && !empty($builder->customerData->deviceFingerPrint) ?
+                $builder->customerData->deviceFingerPrint : null);
+
+        $card = new Card();
+        $builderCard = $builder->paymentMethod;
+        $card->token_format = DigitalWalletTokenFormat::CARD_TOKEN;
+        $card->number = $builderCard->number;
+        $card->expiry_month = !empty($builderCard->expMonth) ?
+            str_pad((string) $builderCard->expMonth, 2, '0', STR_PAD_LEFT) : null;
+        $card->expiry_year = !empty($builderCard->expYear) ?
+            substr(
+                str_pad((string) $builderCard->expYear, 4, '0', STR_PAD_LEFT),
+                2,
+                2
+            ) : null;
+        $requestData['cvv_present'] = !empty($builderCard->cvn) ? 'YES' : 'NO';
+        
+        if (!empty($builderCard->cvn)) {
+            $card->cvv = $builderCard->cvn;
+        }
+        $requestData['card'] = $card;
+
+        $this->maskedValues = ProtectSensitiveData::hideValues(
+            [
+                'card.expiry_month' => $card->expiry_month,
+                'card.expiry_year' => $card->expiry_year,
+                'card.cvv' => $card->cvv
+            ]
+        );
+        $this->maskedValues = ProtectSensitiveData::hideValue('card.number', $card->number, 4, 6);
+
+        return $requestData;
+    }
+
+    /**
+     * Click to Pay decrypt is represented as VERIFY + ENCRYPTED_MOBILE.
+     */
+    private function isClickToPayDecryptRequest(AuthorizationBuilder $builder): bool
+    {
+        return (
+            $builder->transactionType === TransactionType::VERIFY
+            && $builder->transactionModifier === TransactionModifier::ENCRYPTED_MOBILE
+            && $builder->paymentMethod instanceof Credit
+            && $builder->paymentMethod->mobileType === EncyptedMobileType::CLICK_TO_PAY
+        );
+    }
+
+    /**
+     * Build /decrypt request body for Click to Pay.
+     */
+    private function createClickToPayDecryptRequest(AuthorizationBuilder $builder, GpApiConfig $config): array
+    {
+        /** @var Credit $paymentMethod */
+        $paymentMethod = $builder->paymentMethod;
+
+        $requestData = [
+            'account_name' => $config->accessTokenInfo->transactionProcessingAccountName,
+            'type' => 'DECRYPT',
+            'channel' => $config->channel,
+            'country' => $this->resolveRequestCountry($builder, $config),
+            'currency' => $builder->currency,
+            'payment_method' => [
+                'name' => $paymentMethod->cardHolderName ?? null,
+                'entry_mode' => 'ecom',
+                'digital_wallet' => [
+                    'provider' => 'CLICK_TO_PAY',
+                    'brand' => $paymentMethod->cardType ?? null,
+                    'payment_token' => [
+                        'data' => $paymentMethod->token,
+                        'dpa_reference' => $paymentMethod->dpaReference,
+                        'data_type_indicator' => $paymentMethod->dataTypeIndicator
+                    ]
+                ]
+            ]
+        ];
+
+        $this->maskedValues = ProtectSensitiveData::hideValue(
+            'payment_method.digital_wallet.payment_token.data',
+            $paymentMethod->token
+        );
+
+        return $requestData;
     }
 
     private function createFromAuthorizationBuilder($builder, GpApiConfig $config)
@@ -562,7 +679,7 @@ class GpApiAuthorizationRequestBuilder implements IRequestBuilder
         $requestBody = [];
         $this->setTransactionProcessingAccount($requestBody, $config);
         $requestBody['channel'] = $config->channel;
-        $requestBody['country'] = $config->country;
+        $requestBody['country'] = $this->resolveRequestCountry($builder, $config);
         $requestBody['type'] = ($builder->transactionType == TransactionType::REFUND ?
             PaymentType::REFUND : PaymentType::SALE);
         $requestBody['capture_mode'] = !empty($captureMode) ? $captureMode : CaptureMode::AUTO;
@@ -606,6 +723,12 @@ class GpApiAuthorizationRequestBuilder implements IRequestBuilder
             $builder->paymentMethod instanceof BNPL ||
             !empty($builder->supplementaryData)
         ) {
+            if (
+                $builder->paymentMethod instanceof AlternativePaymentMethod &&
+                $builder->paymentMethod->alternativePaymentMethodType === AlternativePaymentType::CASHPRESSO
+            ) {
+                $this->validateCashpressoTransactionRequirements($builder, $config);
+            }
             $this->setOrderInformation($builder, $requestBody);
         }
         if ($builder->paymentMethod instanceof AlternativePaymentMethod ||
@@ -684,6 +807,45 @@ class GpApiAuthorizationRequestBuilder implements IRequestBuilder
         return $requestBody;
     }
 
+    private function resolveRequestCountry(AuthorizationBuilder $builder, GpApiConfig $config): ?string
+    {
+        foreach ([
+            $this->readCountryValue($builder->paymentMethod, 'country'),
+            $this->readCountryValue($builder->billingAddress, 'countryCode'),
+            $this->readCountryValue($builder->shippingAddress, 'countryCode'),
+            $config->country ?? null,
+        ] as $country) {
+            $normalizedCountry = $this->normalizeCountryCode($country);
+            if ($normalizedCountry !== null) {
+                return $normalizedCountry;
+            }
+        }
+
+        return null;
+    }
+
+    private function readCountryValue(?object $source, string $propertyName): ?string
+    {
+        if ($source === null || !property_exists($source, $propertyName)) {
+            return null;
+        }
+
+        $value = $source->{$propertyName};
+        return $value === null || $value === '' ? null : (string) $value;
+    }
+
+    private function normalizeCountryCode(?string $country): ?string
+    {
+        if ($country === null || trim((string) $country) === '') {
+            return null;
+        }
+
+        $normalizedCountry = strtoupper(trim((string) $country));
+        $resolvedCountry = CountryUtils::getCountryCodeByCountry($normalizedCountry);
+
+        return $resolvedCountry !== null ? strtoupper($resolvedCountry) : $normalizedCountry;
+    }
+
     private function setTransactionProcessingAccount(array &$requestData, GpApiConfig $config): void
     {
         $accountName = $config->accessTokenInfo?->transactionProcessingAccountName;
@@ -693,6 +855,13 @@ class GpApiAuthorizationRequestBuilder implements IRequestBuilder
 
         $requestData['account_name'] = $accountName;
         $requestData['account_id'] = $config->accessTokenInfo?->transactionProcessingAccountID;
+    }
+
+    private function getDccLookupTransactionType(AuthorizationBuilder $builder): string
+    {
+        $dccRateType = $builder->dccRateData->dccRateType ?? null;
+
+        return $dccRateType === DccRateType::REFUND ? PaymentType::REFUND : PaymentType::SALE;
     }
 
     private function setRequestStoredCredentials(StoredCredential $storedCredential, &$request, $builder = null, $config = null)
@@ -742,6 +911,20 @@ class GpApiAuthorizationRequestBuilder implements IRequestBuilder
         $payer['reference'] = !empty($builder->customerData) ? $builder->customerData->key : null;
         switch (get_class($builder->paymentMethod)) {
             case AlternativePaymentMethod::class:
+                if ($builder->paymentMethod->alternativePaymentMethodType === AlternativePaymentType::CASHPRESSO) {
+                    $payer['email'] = !empty($builder->customerData) ? $builder->customerData->email : null;
+                    if (!empty($builder->billingAddress)) {
+                        $payer['billing_address'] = [
+                            'line_1' => $builder->billingAddress->streetAddress1,
+                            'line_2' => $builder->billingAddress->streetAddress2,
+                            'line_3' => $builder->billingAddress->streetAddress3,
+                            'city' => $builder->billingAddress->city,
+                            'postal_code' => $builder->billingAddress->postalCode,
+                            'state' => $builder->billingAddress->state,
+                            'country' => $builder->billingAddress->countryCode
+                        ];
+                    }
+                }
                 $payer['home_phone'] = [
                     'country_code' => !empty($builder->homePhone) ?
                         StringUtils::validateToNumber($builder->homePhone->countryCode) : null,
@@ -754,6 +937,16 @@ class GpApiAuthorizationRequestBuilder implements IRequestBuilder
                     'subscriber_number' => !empty($builder->workPhone) ?
                         StringUtils::validateToNumber($builder->workPhone->number) : null,
                 ];
+                if (
+                    $builder->paymentMethod->alternativePaymentMethodType === AlternativePaymentType::BLIK
+                    && strcasecmp((string) $builder->paymentMethod->mode, 'LEVEL_ZERO') === 0
+                ) {
+                    $payer['first_name'] = !empty($builder->customerData) ? $builder->customerData->firstName : null;
+                    $payer['last_name'] = !empty($builder->customerData) ? $builder->customerData->lastName : null;
+                    $payer['email'] = !empty($builder->customerData) ? $builder->customerData->email : null;
+                    $payer['ip_address'] = $builder->customerIpAddress;
+                    $payer['user_agent'] = $builder->customerUserAgent ?? $builder->paymentMethod->userAgent;
+                }
                 break;
             case ECheck::class:
                 $payer['billing_address'] = [
@@ -892,18 +1085,34 @@ class GpApiAuthorizationRequestBuilder implements IRequestBuilder
                         $builder->customerData->deviceFingerPrint : null);
                 $secureEcom = $paymentMethodContainer->threeDSecure;
                 if (!empty($secureEcom)) {
-                    $paymentMethod->authentication =
+                    $authentication = [
+                        'id' => $secureEcom->serverTransactionId
+                    ];
+
+                    $threeDsAuthentication = array_filter(
                         [
-                            'id' => $secureEcom->serverTransactionId,
-                            'three_ds' => [
-                                'exempt_status' => $secureEcom->exemptStatus,
-                                'message_version' => $secureEcom->messageVersion,
-                                'eci' => $secureEcom->eci,
-                                'server_trans_ref' => $secureEcom->serverTransactionId,
-                                'ds_trans_ref' => $secureEcom->directoryServerTransactionId,
-                                'value' => $secureEcom->authenticationValue
-                            ]
-                        ];
+                            'exempt_status' => $secureEcom->exemptStatus,
+                            'message_version' => $secureEcom->messageVersion,
+                            'eci' => $secureEcom->eci,
+                            'server_trans_ref' => $secureEcom->serverTransactionId,
+                            'ds_trans_ref' => $secureEcom->directoryServerTransactionId,
+                            'value' => $secureEcom->authenticationValue
+                        ],
+                        static function ($value) {
+                            return $value !== null && $value !== '';
+                        }
+                    );
+
+                    $meaningfulThreeDsAuthentication = array_diff_key(
+                        $threeDsAuthentication,
+                        ['server_trans_ref' => true]
+                    );
+
+                    if (!empty($meaningfulThreeDsAuthentication)) {
+                        $authentication['three_ds'] = $threeDsAuthentication;
+                    }
+
+                    $paymentMethod->authentication = $authentication;
                 }
                 break;
             case ECheck::class:
@@ -946,6 +1155,29 @@ class GpApiAuthorizationRequestBuilder implements IRequestBuilder
                     'address_override_mode' => !empty($paymentMethodContainer->addressOverrideMode) ?
                         $paymentMethodContainer->addressOverrideMode : null
                 ];
+                if ($paymentMethodContainer->alternativePaymentMethodType === AlternativePaymentType::BLIK) {
+                    $paymentMethod->apm['provider'] = 'BLIK';
+                    if (!empty($paymentMethodContainer->mode)) {
+                        $paymentMethod->apm['mode'] = strtoupper((string) $paymentMethodContainer->mode);
+                    }
+                    if (!empty($paymentMethodContainer->paymentCodeInitiator)) {
+                        $paymentMethod->apm['payment_code_initiator'] =
+                            strtoupper((string) $paymentMethodContainer->paymentCodeInitiator);
+                    }
+                    if (!empty($paymentMethodContainer->paymentCode)) {
+                        $paymentMethod->apm['payment_code'] = $paymentMethodContainer->paymentCode;
+                        $this->maskedValues = ProtectSensitiveData::hideValue(
+                            'payment_method.apm.payment_code',
+                            $paymentMethodContainer->paymentCode
+                        );
+                    }
+                }
+                if (
+                    $paymentMethodContainer->alternativePaymentMethodType === AlternativePaymentType::CASHPRESSO &&
+                    !empty($paymentMethodContainer->paymentPlan)
+                ) {
+                    $paymentMethod->apm['payment_plan'] = $paymentMethodContainer->paymentPlan;
+                }
                 if (!empty($paymentMethodContainer->category)) {
                     $paymentMethod->apm['category'] = $paymentMethodContainer->category;
                 } elseif ($paymentMethodContainer->alternativePaymentMethodType === AlternativePaymentType::ERATY) {
@@ -1017,9 +1249,16 @@ class GpApiAuthorizationRequestBuilder implements IRequestBuilder
         )) {
             if ($paymentMethodContainer instanceof ITokenizable && !empty($paymentMethodContainer->token)) {
                 $paymentMethod->id = $paymentMethodContainer->token;
-                if (!empty($paymentMethodContainer->cvn)) {
-                    $paymentMethod->card = new Card();
-                    $paymentMethod->card->cvv = $paymentMethodContainer->cvn;
+                if (!empty($paymentMethodContainer->cvn) || !empty($builder->billingAddress)) {
+                    $paymentMethod->card = $paymentMethod->card ?? new Card();
+                    if (!empty($paymentMethodContainer->cvn)) {
+                        $paymentMethod->card->cvv = $paymentMethodContainer->cvn;
+                    }
+                    // AVS is carried on payment_method.card even when paying with a token.
+                    if (!empty($builder->billingAddress)) {
+                        $paymentMethod->card->avs_address = $builder->billingAddress->streetAddress1;
+                        $paymentMethod->card->avs_postal_code = $builder->billingAddress->postalCode;
+                    }
                 }
             }
 
@@ -1027,6 +1266,36 @@ class GpApiAuthorizationRequestBuilder implements IRequestBuilder
                 $paymentMethod->card = CardUtils::generateCard($builder, GatewayProvider::GP_API, $this->maskedValues);
                 if ($paymentMethodContainer instanceof ICardData && !empty($paymentMethodContainer->number)) {
                     $paymentMethod->card->brand = strtoupper((string)$paymentMethodContainer->getCardType());
+                }
+            }
+
+            // For Click to Pay post-decrypt transactions, include DEC_ID and token metadata.
+            if (
+                $paymentMethodContainer instanceof Credit
+                && $paymentMethodContainer->mobileType === EncyptedMobileType::CLICK_TO_PAY
+            ) {
+                $decryptId = $builder->decryptId ?? $paymentMethodContainer->decryptId;
+                if (!empty($decryptId)) {
+                    $digitalWallet = [
+                        'provider' => EnumMapping::mapDigitalWalletType(
+                            GatewayProvider::GP_API,
+                            $paymentMethodContainer->mobileType
+                        ),
+                        'decrypt' => ['id' => $decryptId]
+                    ];
+
+                    $paymentToken = [];
+                    if (!empty($paymentMethodContainer->dpaReference)) {
+                        $paymentToken['dpa_reference'] = $paymentMethodContainer->dpaReference;
+                    }
+                    if (!empty($paymentMethodContainer->dataTypeIndicator)) {
+                        $paymentToken['data_type_indicator'] = $paymentMethodContainer->dataTypeIndicator;
+                    }
+                    if (!empty($paymentToken)) {
+                        $digitalWallet['payment_token'] = $paymentToken;
+                    }
+
+                    $paymentMethod->digital_wallet = $digitalWallet;
                 }
             }
         } else {
@@ -1220,8 +1489,16 @@ class GpApiAuthorizationRequestBuilder implements IRequestBuilder
 
         switch (get_class($builder->paymentMethod)) {
             case AlternativePaymentMethod::class:
+                if ($builder->paymentMethod->alternativePaymentMethodType === AlternativePaymentType::CASHPRESSO) {
+                    $order['shipping_method'] = $builder->cashpressoShippingMethod;
+                    $order['shipping_date'] = $builder->shippingDate;
+                }
                 if (!empty($builder->productData)) {
-                    $this->setItemDetailsListForApm($builder, $order);
+                    if ($builder->paymentMethod->alternativePaymentMethodType === AlternativePaymentType::CASHPRESSO) {
+                        $this->setCashpressoItemDetailsListForApm($builder, $order);
+                    } else {
+                        $this->setItemDetailsListForApm($builder, $order);
+                    }
                 }
                 break;
             case BNPL::class:
@@ -1342,6 +1619,103 @@ class GpApiAuthorizationRequestBuilder implements IRequestBuilder
         $order['amount'] = $orderAmount;
         $order['currency'] = $orderCurrency;
         $order['items'] = $items ?? null;
+    }
+
+    private function setCashpressoItemDetailsListForApm(AuthorizationBuilder $builder, array &$order): void
+    {
+        $taxTotalAmount = 0;
+        $items = [];
+
+        foreach ($builder->productData as $product) {
+            if ($product instanceof Product) {
+                $quantity = (int) ($product->quantity ?? 0);
+                $unitAmount = StringUtils::toNumeric($product->unitPrice ?? 0, $builder->currency);
+                $taxAmount = StringUtils::toNumeric($product->taxAmount ?? 0, $builder->currency);
+                $description = $product->description ?? null;
+                $reference = $product->productId ?? null;
+                $label = $product->productName ?? $description;
+            } elseif (is_array($product)) {
+                $quantity = (int) ($product['quantity'] ?? 0);
+                $unitAmount = StringUtils::toNumeric($product['unit_amount'] ?? 0, $builder->currency);
+                $taxAmount = StringUtils::toNumeric($product['tax_amount'] ?? 0, $builder->currency);
+                $description = $product['description'] ?? null;
+                $reference = $product['reference'] ?? null;
+                $label = $product['label'] ?? $description;
+            } else {
+                continue;
+            }
+
+            $taxTotalAmount += $taxAmount;
+
+            $items[] = [
+                'description' => $description,
+                'reference' => $reference,
+                'label' => $label,
+                'quantity' => (string) $quantity,
+                'unit_amount' => (string) $unitAmount,
+                'tax_amount' => (string) $taxAmount,
+            ];
+        }
+
+        if (!empty($items)) {
+            $order['items'] = $items;
+            $order['tax_amount'] = (string) $taxTotalAmount;
+        }
+    }
+
+    private function validateCashpressoTransactionRequirements(
+        AuthorizationBuilder $builder,
+        ?GpApiConfig $config = null
+    ): void {
+        $paymentMethod = $builder->paymentMethod;
+
+        if (!$paymentMethod instanceof AlternativePaymentMethod) {
+            return;
+        }
+
+        if (empty($paymentMethod->paymentPlan)) {
+            throw new ArgumentException('payment_method.apm.payment_plan is required for CASHPRESSO.');
+        }
+
+        $country = $this->resolveRequestCountry($builder, $config) ?? '';
+        if (!in_array($country, ['DE', 'AT'], true)) {
+            throw new ArgumentException('country must be DE or AT for CASHPRESSO.');
+        }
+
+        CashpressoPaymentPlan::validate($paymentMethod->paymentPlan);
+
+        if (
+            $paymentMethod->paymentPlan === CashpressoPaymentPlan::PAY_IN_3_INSTALLMENTS &&
+            StringUtils::toNumeric($builder->amount, $builder->currency) < 15000
+        ) {
+            throw new ArgumentException('PAY_IN_3_INSTALLMENTS requires amount >= 15000 in minor units.');
+        }
+
+        if (empty($builder->cashpressoShippingMethod)) {
+            throw new ArgumentException('order.shipping_method is required for CASHPRESSO.');
+        }
+
+        CashpressoShippingMethod::validate($builder->cashpressoShippingMethod);
+
+        if (empty($builder->shippingDate)) {
+            throw new ArgumentException('order.shipping_date is required for CASHPRESSO.');
+        }
+
+        $shippingDate = \DateTime::createFromFormat('Y-m-d', (string) $builder->shippingDate);
+        if (!$shippingDate || $shippingDate->format('Y-m-d') !== $builder->shippingDate) {
+            throw new ArgumentException('order.shipping_date must use format YYYY-MM-DD for CASHPRESSO.');
+        }
+
+        $shippingDate->setTime(0, 0, 0);
+
+        $today = new \DateTime('today');
+        if ($shippingDate <= $today) {
+            throw new ArgumentException('order.shipping_date must be later than today for CASHPRESSO.');
+        }
+
+        if (!empty($builder->productData) && count($builder->productData) > 10) {
+            throw new ArgumentException('order.items supports a maximum of 10 entries for CASHPRESSO.');
+        }
     }
 
     public function mapFraudManagement()

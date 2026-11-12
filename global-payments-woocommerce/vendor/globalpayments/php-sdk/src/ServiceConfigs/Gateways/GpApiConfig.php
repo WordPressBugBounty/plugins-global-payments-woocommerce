@@ -13,7 +13,7 @@ use GlobalPayments\Api\Entities\Enums\{
     ServiceEndpoints
 };
 use GlobalPayments\Api\Entities\Exceptions\ConfigurationException;
-use GlobalPayments\Api\Entities\GpApi\{AccessTokenInfo, GpApiSessionInfo};
+use GlobalPayments\Api\Entities\GpApi\{AccessTokenInfo, GpApiRequest, GpApiSessionInfo};
 use GlobalPayments\Api\Gateways\{GpApiConnector, IAccessTokenProvider};
 
 class GpApiConfig extends GatewayConfig
@@ -87,6 +87,11 @@ class GpApiConfig extends GatewayConfig
     public ?string $merchantId = null;
 
     /**
+    * @var string
+    */
+    public ?string $merchantManagementAccountID = null;
+
+    /**
      * @var string
     */
     public ?string $deviceCurrency = null;
@@ -139,6 +144,74 @@ class GpApiConfig extends GatewayConfig
         $services->setPayFacProvider($gateway);
         $services->setSecure3dProvider(Secure3dVersion::ONE, $gateway);
         $services->setSecure3dProvider(Secure3dVersion::TWO, $gateway);
+    }
+
+    public function getMerchantManagementAccountUrl(): string
+    {
+        return !empty($this->merchantManagementAccountID) ?
+            GpApiRequest::ACCOUNTS_ENDPOINT . '/' . $this->merchantManagementAccountID : '';
+    }
+
+    public function getMerchantUrl(?string $merchantId = null): string
+    {
+        $merchantId = $merchantId ?? $this->merchantId;
+
+        return !empty($merchantId) ?
+            GpApiRequest::MERCHANT_MANAGEMENT_ENDPOINT . '/' . $merchantId : '';
+    }
+
+    public function getRequestEndpointPrefix(string $endpoint, ?string $merchantId = null): string
+    {
+        $prefix = '';
+        $accountUrl = $this->getMerchantManagementAccountUrl();
+
+        if (
+            !$this->isAbsoluteAccountPath($endpoint) &&
+            $accountUrl !== '' &&
+            !$this->hasPathPrefix($endpoint, $accountUrl) &&
+            !$this->isMerchantScopedAccountPath($endpoint)
+        ) {
+            $prefix .= $accountUrl;
+        }
+
+        if (
+            !$this->isAbsoluteAccountPath($endpoint) &&
+            !$this->containsPathSegment($endpoint, GpApiRequest::MERCHANT_MANAGEMENT_ENDPOINT)
+        ) {
+            $prefix .= $this->getMerchantUrl($merchantId);
+        }
+
+        return $prefix;
+    }
+
+    /** Absolute GP-API account routes already include the target account scope and should not be prefixed again. */
+    private function isAbsoluteAccountPath(string $endpoint): bool
+    {
+        $merchants = preg_quote(trim(GpApiRequest::MERCHANT_MANAGEMENT_ENDPOINT, '/'), '~');
+        $accounts = preg_quote(trim(GpApiRequest::ACCOUNTS_ENDPOINT, '/'), '~');
+
+        return preg_match('~^(?:' . $merchants . '/[^/]+)?/' . $accounts . '(?:/|$)~', $endpoint) === 1;
+    }
+
+    /** /merchants/{id}/accounts/{id} is absolute per the GP-API Accounts spec and takes no account prefix. */
+    private function isMerchantScopedAccountPath(string $endpoint): bool
+    {
+        $merchants = preg_quote(trim(GpApiRequest::MERCHANT_MANAGEMENT_ENDPOINT, '/'), '~');
+        $accounts = preg_quote(trim(GpApiRequest::ACCOUNTS_ENDPOINT, '/'), '~');
+
+        return preg_match('~(?:^|/)' . $merchants . '/[^/]+/' . $accounts . '/[^/]+~', $endpoint) === 1;
+    }
+
+    private function hasPathPrefix(string $endpoint, string $path): bool
+    {
+        return $endpoint === $path || str_starts_with($endpoint, $path . '/');
+    }
+
+    private function containsPathSegment(string $endpoint, string $segment): bool
+    {
+        $segment = trim($segment, '/');
+
+        return preg_match('~(?:^|/)' . preg_quote($segment, '~') . '(?:/|$)~', $endpoint) === 1;
     }
 
     public function resolveServiceUrl(): string

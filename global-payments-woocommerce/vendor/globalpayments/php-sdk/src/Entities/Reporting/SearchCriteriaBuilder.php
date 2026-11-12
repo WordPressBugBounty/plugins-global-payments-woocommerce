@@ -58,6 +58,11 @@ class SearchCriteriaBuilder
     /**
      * @var string
      */
+    public $acquirerCode;
+
+    /**
+     * @var string
+     */
     public $aquirerReferenceNumber;
     
     /**
@@ -301,6 +306,11 @@ class SearchCriteriaBuilder
     /**
      * @var string
      */
+    public $merchantCurrency;
+
+    /**
+     * @var string
+     */
     public $name;
     
     /**
@@ -311,7 +321,7 @@ class SearchCriteriaBuilder
     /**
      * @var string
      */
-    public $oderId;
+    public $orderId;
 
     /**
      * @var PaymentEntryMode
@@ -340,6 +350,9 @@ class SearchCriteriaBuilder
 
     /** @var PaymentMethodUsageMode */
     public $paymentMethodUsageMode;
+
+    /** @var string|array<string> */
+    public $payerCurrency;
 
     /** @var string */
     public $paymentMethodKey;
@@ -398,6 +411,11 @@ class SearchCriteriaBuilder
      * @var string
      */
     public $scheduleId;
+
+    /**
+     * @var int
+     */
+    public $lastIndex;
     
     /**
      * @var string
@@ -458,6 +476,9 @@ class SearchCriteriaBuilder
      * @var string
      */
     public $timezone;
+
+    /** @var string|\DateTimeInterface */
+    public $timeLastReceived;
 
     /**
      * @var string

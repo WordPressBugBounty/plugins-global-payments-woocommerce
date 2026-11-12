@@ -4,7 +4,11 @@
 
 # GlobalPayments PHP SDK
 
-This SDK makes it easy to integrate your PHP application with our Card Not Present and Card Present APIs. 
+This SDK makes it easy to integrate your PHP application with our Card Not Present and Card Present APIs.
+
+## GP-API Currency Conversions
+
+GP-API currency conversion support is available through the SDK for dynamic currency conversion (DCC) rate lookup and DCC BIN-range retrieval.
 
 ## Solutions
 
@@ -85,6 +89,157 @@ try {
 }
 ```
 
+### GP-API Access Token
+
+The SDK supports creating GP-API access tokens with full control over token configuration and complete response field mapping.
+
+#### Generate an Access Token
+
+```php
+use GlobalPayments\Api\Entities\Enums\Channel;
+use GlobalPayments\Api\Entities\Enums\Environment;
+use GlobalPayments\Api\Entities\Enums\IntervalToExpire;
+use GlobalPayments\Api\ServiceConfigs\Gateways\GpApiConfig;
+use GlobalPayments\Api\Services\GpApiService;
+
+$config = new GpApiConfig();
+$config->appId = 'your-app-id';
+$config->appKey = 'your-app-key';
+$config->environment = Environment::TEST;
+$config->channel = Channel::CardNotPresent;
+
+// Optional: control token expiration
+$config->secondsToExpire = 3600;
+$config->intervalToExpire = IntervalToExpire::ONE_HOUR;
+
+// Optional: scope the token to specific permissions
+$config->permissions = ['TRN_POST_Authorize', 'TRN_POST_Capture'];
+
+// Optional: create a restricted token for Drop-in UI / Hosted Fields
+$config->restrictedToken = true;
+
+$accessTokenInfo = GpApiService::generateTransactionKey($config);
+```
+
+### GP-API 3DS Authentication Flow
+
+The SDK supports the GP-API authentication `/ucp/authentications`.
+
+#### Endpoint Sequence Covered
+
+Flow 1 (create + initiate):
+
+- `POST /ucp/authentications`
+- `POST /ucp/authentications/{id}/initiate`
+
+Flow 2 (list + result + single):
+
+- `GET /ucp/authentications`
+- `GET /ucp/authentications/{id}/result`
+- `GET /ucp/authentications/{id}`
+
+#### Account and Permission Notes
+
+- Use an account with authentication permissions (for example account name `transaction_processing`).
+- Required permissions typically include `AUT_GET_List`, `AUT_GET_Single`, `AUT_POST_Initiate`, and `AUT_POST_Results`.
+- If permissions are missing, sandbox may return authorization errors such as `ACTION_NOT_AUTHORIZED`.
+
+#### Integration Test Coverage
+
+Authentication endpoint coverage is validated in integration tests:
+
+- `test/Integration/Gateways/GpApiConnector/GpApi3DSecureTest.php`
+- `test/Integration/Gateways/GpApiConnector/GpApi3DS2Test.php`
+
+Run focused authentication tests:
+
+```bash
+vendor/bin/phpunit --filter testPostAuthentications_CreateThenInitiate test/Integration/Gateways/GpApiConnector/GpApi3DSecureTest.php
+vendor/bin/phpunit --filter testGetAuthentications_ListThenGetResultThenFetchById test/Integration/Gateways/GpApiConnector/GpApi3DSecureTest.php
+```
+
+#### Available Request Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `appId` | string | Application identifier (required) |
+| `appKey` | string | Application key (required) |
+| `secondsToExpire` | int | Token TTL in seconds (60–604800) |
+| `intervalToExpire` | string | Token TTL as interval (`WEEK`, `DAY`, `1_HOUR`, etc.) |
+| `permissions` | array | Permission strings to scope the token |
+| `restrictedToken` | bool | When true, masks account info in the response |
+
+#### Available Response Fields
+
+```php
+$accessTokenInfo->accessToken;       // Bearer token string
+$accessTokenInfo->tokenType;         // "Bearer"
+$accessTokenInfo->appId;             // Application ID
+$accessTokenInfo->appName;           // Application name
+$accessTokenInfo->merchantId;        // Merchant ID (MER_...)
+$accessTokenInfo->merchantName;      // Merchant name
+$accessTokenInfo->email;             // Associated email
+$accessTokenInfo->timeCreated;       // ISO-8601 creation timestamp
+$accessTokenInfo->secondsToExpire;   // TTL in seconds
+$accessTokenInfo->intervalToExpire;  // TTL interval enum
+```
+
+### GP-API MMA Account Selection
+
+For partner setups with multiple MMA accounts, set `merchantManagementAccountID` on `GpApiConfig` to scope non-token GP-API requests to a specific MMA account.
+
+```php
+use GlobalPayments\Api\Entities\Enums\Channel;
+use GlobalPayments\Api\Entities\Enums\Environment;
+use GlobalPayments\Api\ServiceConfigs\Gateways\GpApiConfig;
+
+$config = new GpApiConfig();
+$config->appId = 'your-app-id';
+$config->appKey = 'your-app-key';
+$config->environment = Environment::TEST;
+$config->channel = Channel::CardNotPresent;
+
+// Partner merchant to transact against
+$config->merchantId = 'MER_1234567890';
+
+// MMA account to route non-access-token requests through
+$config->merchantManagementAccountID = 'MMA_1234567890';
+```
+
+With both values present, transaction requests are routed under the selected MMA account, for example `/accounts/{MMA_ID}/merchants/{MER_ID}/transactions`.
+
+Access token requests continue to use the standard `/accesstoken` endpoint and are not prefixed with the MMA account path.
+
+### GP-API Account Sync
+
+The GP-API account reporting and edit flows now surface the full account list/detail envelope, including merchant context, paging metadata, and action metadata.
+
+Supported account flows covered by this story:
+
+- `GET /accounts`
+- `GET /accounts/{id}`
+- `PATCH /accounts/{id}`
+- `GET /merchants/{MER_id}/accounts/{FMA_id}`
+
+Newly surfaced request and response fields include:
+
+- `card_replacement_reason`
+- `notifications.status_url`
+- `processing_limits`
+- `capabilities`
+- `status_change_reason`
+- `merchant_id`
+- `merchant_name`
+- `time_created`
+- `time_last_updated`
+- `email_id`
+- `action`
+
+Implementation and coverage references:
+
+- [test/Integration/Gateways/GpApiConnector/GpApiMerchantAccountsTest.php](test/Integration/Gateways/GpApiConnector/GpApiMerchantAccountsTest.php)
+- [gpapi-accounts-sync-report.html](gpapi-accounts-sync-report.html)
+
 ### Test Card Data
 
 Name        | Number           | Exp Month | Exp Year | CVN
@@ -118,6 +273,35 @@ try {
 } catch (ApiException $e) {
     // handle all other errors
 }
+```
+
+### GP-API Actions Reporting Example
+
+```php
+use GlobalPayments\Api\Entities\Enums\ActionSortProperty;
+use GlobalPayments\Api\Entities\Enums\SortDirection;
+use GlobalPayments\Api\Entities\Reporting\SearchCriteria;
+use GlobalPayments\Api\Services\ReportingService;
+
+// GET /actions
+$actions = ReportingService::findActionsPaged(1, 10)
+    ->orderBy(ActionSortProperty::TIME_CREATED, SortDirection::DESC)
+    ->where(SearchCriteria::ACTION_TYPE, 'AUTHORIZE')
+    ->andWith(SearchCriteria::RESOURCE, 'TRANSACTIONS')
+    ->andWith(SearchCriteria::HTTP_RESPONSE_CODE, '200')
+    ->execute();
+
+// GET /actions/{id}
+$action = ReportingService::actionDetail('ACT_bxWus66W5qSTCcGECIPUT5zLhISaMy')
+    ->execute();
+
+// Single action details include core and extended fields such as:
+// id, type, resource, resourceId, resourceParentId, resourceRequestUrl,
+// responseCode, responseDetailedCode, responseDetailedMessage,
+// merchantId, merchantName, accountId, accountName,
+// sourceLocation, destinationLocation,
+// messageReceived/messageSent (rawRequest/rawResponse aliases),
+// metrics, totalTimeMilliseconds, totalTimeDownstreamMilliseconds.
 ```
 
 ## Contributing

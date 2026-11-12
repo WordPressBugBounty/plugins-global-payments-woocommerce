@@ -7,7 +7,9 @@ use GlobalPayments\Api\Entities\Enum;
 class SearchCriteria extends Enum
 {
     const ACCOUNT_NAME = 'accountName';
+    const ACCOUNT_ID = 'accountId';
     const ACCOUNT_NUMBER_LAST_FOUR = 'accountNumberLastFour';
+    const ACQUIRER_CODE = 'acquirerCode';
     const ALT_PAYMENT_STATUS = 'altPaymentStatus';
     const AQUIRER_REFERENCE_NUMBER = 'aquirerReferenceNumber';
     const AUTH_CODE = 'authCode';
@@ -23,6 +25,7 @@ class SearchCriteria extends Enum
     const CARD_NUMBER_FIRST_SIX = 'cardNumberFirstSix';
     const CARD_NUMBER_LAST_FOUR = 'cardNumberLastFour';
     const CHANNEL = 'channel';
+    const COUNTRY = 'country';
     const CHECK_FIRST_NAME = 'checkFirstName';
     const CHECK_LAST_NAME = 'checkLastName';
     const CHECK_NAME = 'checkName';
@@ -48,6 +51,7 @@ class SearchCriteria extends Enum
     const PAYMENT_METHOD_NAME = 'paymentMethodName';
     const PAYMENT_METHOD_USAGE_MODE = 'paymentMethodUsageMode';
     const PAYMENT_PROVIDER = 'paymentProvider';
+    const ORDER_ID = 'orderId';
     const REFERENCE_NUMBER = 'referenceNumber';
     const SETTLEMENT_AMOUNT = 'settlementAmount';
     const SCHEDULE_ID = 'scheduleId';
@@ -73,7 +77,9 @@ class SearchCriteria extends Enum
     const RESOURCE_STATUS = 'resourceStatus';
     const RESOURCE_ID = 'resourceId';
     const MERCHANT_NAME = 'merchantName';
+    const MERCHANT_CURRENCY = 'merchantCurrency';
     const APP_NAME = 'appName';
+    const PAYER_CURRENCY = 'payerCurrency';
     const VERSION = 'version';
     const RESPONSE_CODE = 'responseCode';
     const HTTP_RESPONSE_CODE = 'httpResponseCode';
@@ -84,6 +90,8 @@ class SearchCriteria extends Enum
     const PAYBYLINK_STATUS = 'payByLinkStatus';
     const DESCRIPTION = 'description';
     const EXPIRATION_DATE = 'expirationDate';
+    const LAST_INDEX = 'lastIndex';
     const ACCOUNT_STATUS = 'accountStatus';
     const ADDRESS = 'address';
+    const TIME_LAST_RECEIVED = 'timeLastReceived';
 }

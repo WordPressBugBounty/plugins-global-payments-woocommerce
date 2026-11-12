@@ -188,6 +188,19 @@ class GpApiReportRequestBuilder implements IRequestBuilder
                 $endpoint = GpApiRequest::PAYMENT_METHODS_ENDPOINT . '/' . $builder->searchBuilder->storedPaymentMethodId;
                 $verb = 'GET';
                 break;
+            case ReportType::FIND_DCC_BIN_RANGES:
+                $endpoint = GpApiRequest::DCC_BIN_RANGES_ENDPOINT;
+                $verb = 'GET';
+                $queryParams = [
+                    'account_name' => $builder->searchBuilder->accountName,
+                    'account_id' => $builder->searchBuilder->accountId,
+                    'country' => $builder->searchBuilder->country,
+                    'merchant_currency' => $builder->searchBuilder->merchantCurrency,
+                    'payer_currency' => $this->normalizePayerCurrency($builder->searchBuilder->payerCurrency),
+                    'time_last_received' => $this->formatDateQuery($builder->searchBuilder->timeLastReceived),
+                    'last_index' => $builder->searchBuilder->lastIndex,
+                ];
+                break;
             case ReportType::INSTALLMENT_DETAIL:
                 $endpoint = GpApiRequest::INSTALLMENT_ENDPOINT . '/' . $builder->searchBuilder->installmentId;
                 $verb = 'GET';
@@ -276,8 +289,7 @@ class GpApiReportRequestBuilder implements IRequestBuilder
             case ReportType::FIND_ACCOUNTS_PAGED:
                 $endpoint = GpApiRequest::ACCOUNTS_ENDPOINT;
                 if (!empty($builder->searchBuilder->merchantId)) {
-                    $endpoint =  GpApiRequest::MERCHANT_MANAGEMENT_ENDPOINT . '/' .
-                        $builder->searchBuilder->merchantId . $endpoint;
+                    $endpoint = $config->getMerchantUrl($builder->searchBuilder->merchantId) . $endpoint;
                 }
                 $verb = 'GET';
                 $this->addBasicParams($queryParams, $builder);
@@ -292,7 +304,10 @@ class GpApiReportRequestBuilder implements IRequestBuilder
                 $queryParams['id'] = $builder->searchBuilder->resourceId ?? null;
                 break;
             case ReportType::FIND_ACCOUNT_DETAIL:
-                $endpoint = GpApiRequest::ACCOUNTS_ENDPOINT. '/'. $builder->searchBuilder->accountId;
+                $endpoint = GpApiRequest::ACCOUNTS_ENDPOINT . '/' . $builder->searchBuilder->accountId;
+                if (!empty($builder->merchantId)) {
+                    $endpoint = $config->getMerchantUrl($builder->merchantId) . $endpoint;
+                }
                 if (!empty($builder->searchBuilder->address)) {
                     $endpoint .= '/addresses';
                     $queryParams = [
@@ -328,6 +343,7 @@ class GpApiReportRequestBuilder implements IRequestBuilder
             'order_by' => $builder->disputeOrderBy,
             'order' => $builder->order,
             'arn' => $builder->searchBuilder->aquirerReferenceNumber,
+            'acquirer_code' => $builder->searchBuilder->acquirerCode,
             'brand' => $builder->searchBuilder->cardBrand,
             'status' => $builder->searchBuilder->disputeStatus,
             'stage' => $builder->searchBuilder->disputeStage,
@@ -341,7 +357,8 @@ class GpApiReportRequestBuilder implements IRequestBuilder
                 $builder->searchBuilder->endDepositDate->format('Y-m-d') : null,
             'system.mid' => $builder->searchBuilder->merchantId,
             'system.hierarchy' => $builder->searchBuilder->systemHierarchy,
-            'deposit_id' => $builder->searchBuilder->depositReference
+            'deposit_id' => $builder->searchBuilder->depositReference,
+            'order.reference' => $builder->searchBuilder->orderId
         ];
     }
 
@@ -362,6 +379,34 @@ class GpApiReportRequestBuilder implements IRequestBuilder
             $builder->searchBuilder->endDate->format('Y-m-d') : null;
 
         return $queryParams;
+    }
+
+    private function normalizePayerCurrency(mixed $payerCurrency): mixed
+    {
+        if (is_array($payerCurrency)) {
+            return empty($payerCurrency) ? null : $payerCurrency;
+        }
+
+        if (is_string($payerCurrency)) {
+            $trimmed = trim($payerCurrency);
+            return $trimmed === '' ? null : [$trimmed];
+        }
+
+        return null;
+    }
+
+    private function formatDateQuery(mixed $value): ?string
+    {
+        if ($value instanceof \DateTimeInterface) {
+            return $value->format('Y-m-d');
+        }
+
+        if (is_string($value)) {
+            $trimmed = trim($value);
+            return $trimmed === '' ? null : $trimmed;
+        }
+
+        return null;
     }
 
     public function buildRequestFromJson(mixed $jsonRequest, mixed $config): mixed

@@ -2,7 +2,55 @@
     <img src="https://developer.globalpay.com/static/media/logo.db1c4126172e20a5c31cf9d5150cc88a.svg" alt="Global Payments logo" title="Global Payments" align="right" width="225" />
 </a>
 
-## Latest Version: v14.4.3 (08/13/26)
+## Latest Version: v14.8.0 (11/05/26)
+### Enhancements:
+- [GPAPI] Added DCC BIN ranges report support for GET /currency-conversions/dcc-bin-ranges via ReportingService::findDccBinRanges(), with country, merchant currency, payer currency, time last received and last index search criteria
+
+## v14.7.2 (11/03/26)
+### Bug Fixes:
+- [GPAPI] Fixed unauthenticated reflected XSS in end-to-end example callback files and hardened GP-ECOM 3DS challenge handling for Base64URL CRes payloads with safe JavaScript serialization
+
+## v14.7.1 (10/29/26)
+### Enhancements:
+- [GPAPI] Added support for closing batches without a batch ID (POST /batches), including account-based resolution and routing metadata for multi-transit setups
+- [GPAPI] Added Card Present (CP) EMV response mappings for track_number, encryption type, and entry_mode
+
+## v14.7.0 (10/15/26)
+### Enhancements:
+- [GPAPI] Added merchant management account support for partner GP-API routing. When both the MMA ID and merchant ID are set, merchant requests use /accounts/{MMA_ID}/merchants/{MER_ID}/transactions access-token requests remain unchanged
+- [GPAPI] Normalized GPAPI response statuses such as SUCCESS and CAPTURED to standard SDK response codes like 00 and 10
+
+## v14.6.3 (10/01/26)
+### Bug Fixes:
+- [GPAPI] Fixed AVS data missing from some transactions
+
+## v14.6.2 (09/24/26)
+### Enhancements:
+- [GPAPI] Adding missing dispute search request parameters and mapping missing response fields for GET /disputes, GET /disputes/{id}, POST /disputes/{id}/challenge, and GET /disputes/{id}/documents
+- [GPAPI] Adding missing authentication request parameters and correcting decoupled field placement for POST /authentications and POST /authentications/{id}/initiate
+- [Genius] Fixed Genius connector reversal handling by mapping TransactionType::REVERSAL to the Merchantware Void operation
+
+## v14.6.1 (09/17/26)
+### Enhancements:
+- [GPAPI] Synced GP-API account reporting and edit flows with API spec by adding all missing request parameters and mapping all missing response fields for GET /accounts, GET /accounts/{id}, PATCH /accounts/{id}, and GET /merchants/{MER_id}/accounts/{FMA_id}
+
+## v14.6.0 (09/03/26)
+### New Features:
+- [GPAPI] Added Cashpresso APM support for direct transactions and HPP, including payment plans, shipping method and shipping date, order item mapping, and request validation
+- [GPAPI] Added BLIK Level 0 support for direct transactions, including mode and payment code request mapping and required payer IP address and user agent validation
+
+## v14.5.0 (08/20/26)
+### Enhancements:
+- [GPAPI] Added end-to-end Click to Pay decrypt support: decrypt request handling, DEC_ID/PMT_ID mapping, and decrypt ID usage in transactions
+- [GPAPI] Synced Actions reporting with API spec by adding all missing request parameters and mapping all missing response fields for GET /actions and GET /actions/{id}
+
+## v14.4.4 (08/20/26)
+### Bug Fixes:
+- [GPAPI] Fixed Genius logging by wiring requestLogger so gateway request/response logs are now captured correctly
+### Enhancements:
+- [GPAPI] Mapped all missing response fields for /accesstoken
+
+## v14.4.3 (08/13/26)
 ### Bug Fixes:
 - [GP-ECOM] Improved 3DS test reliability by handling known sandbox issues (signature checks and ACS connection drops) so test results are more stable
 - [GPAPI] Fixed sandbox changed surcharge error code and CVV error line number. Updated tests to use keyword-based assertions instead of exact-match strings

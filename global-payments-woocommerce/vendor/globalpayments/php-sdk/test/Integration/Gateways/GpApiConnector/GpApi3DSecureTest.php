@@ -27,6 +27,8 @@ use GlobalPayments\Api\Entities\Enums\StoredCredentialType;
 use GlobalPayments\Api\Entities\Enums\SuspiciousAccountActivity;
 use GlobalPayments\Api\Entities\Enums\TransactionStatus;
 use GlobalPayments\Api\Entities\Exceptions\ApiException;
+use GlobalPayments\Api\Entities\Exceptions\GatewayException;
+use GlobalPayments\Api\Entities\GpApi\PagedResult;
 use GlobalPayments\Api\Entities\MobileData;
 use GlobalPayments\Api\Entities\StoredCredential;
 use GlobalPayments\Api\Entities\ThreeDSecure;
@@ -42,6 +44,16 @@ use PHPUnit\Framework\TestCase;
 
 class GpApi3DSecureTest extends TestCase
 {
+    private function isEnvironmentAuthorizationIssue(ApiException $e): bool
+    {
+        $message = $e->getMessage();
+        $responseCode = $e instanceof GatewayException ? (string) $e->responseCode : null;
+
+        return in_array($responseCode, ['40003', '40004'], true)
+            || str_contains($message, 'Permission not enabled')
+            || str_contains($message, 'Access token and merchant info do not match');
+    }
+
     /**
      * @var Address
      */
@@ -114,7 +126,101 @@ class GpApi3DSecureTest extends TestCase
 
     public function setUpConfig(): GpApiConfig
     {
-        return BaseGpApiTestConfig::gpApiSetupConfig(Channel::CardNotPresent);
+        $config = BaseGpApiTestConfig::gpApiSetupConfig(Channel::CardNotPresent);
+        $config->appId = BaseGpApiTestConfig::VISA_APP_ID;
+        $config->appKey = BaseGpApiTestConfig::VISA_APP_KEY;
+        $config->accessTokenInfo->transactionProcessingAccountName = 'transaction_processing';
+
+        return $config;
+    }
+
+    private function createAuthentication(string $cardNumber, string $reference): ThreeDSecure
+    {
+        $this->card->number = $cardNumber;
+
+        return Secure3dService::checkEnrollment($this->card)
+            ->withCurrency($this->currency)
+            ->withAmount($this->amount)
+            ->withReferenceNumber($reference)
+            ->execute();
+    }
+
+    private function initiateAuthentication(ThreeDSecure $authentication): ThreeDSecure
+    {
+        return Secure3dService::initiateAuthentication($this->card, $authentication)
+            ->withAmount($this->amount)
+            ->withCurrency($this->currency)
+            ->withAuthenticationSource(AuthenticationSource::BROWSER)
+            ->withMethodUrlCompletion(MethodUrlCompletion::YES)
+            ->withOrderCreateDate(date('Y-m-d H:i:s'))
+            ->withAddress($this->shippingAddress, AddressType::SHIPPING)
+            ->withOrderTransactionType(OrderTransactionType::GOODS_SERVICE_PURCHASE)
+            ->withBrowserData($this->browserData)
+            ->withCustomerEmail('jason@globalpay.com')
+            ->execute();
+    }
+
+    private function listAuthenticationsOrSkip(): PagedResult
+    {
+        try {
+            return Secure3dService::findAuthentications(1, 10)
+                ->withQueryParams([
+                    'order_by' => 'TIME_CREATED',
+                    'order' => 'DESC',
+                ])
+                ->execute();
+        } catch (ApiException $e) {
+            if ($this->isEnvironmentAuthorizationIssue($e)) {
+                $this->markTestSkipped('Permission not enabled to execute authentication list retrieval for this appId/appKey');
+            }
+
+            throw $e;
+        }
+    }
+
+    private function getAuthenticationResultOrSkip(string $authenticationId): ThreeDSecure
+    {
+        try {
+            return Secure3dService::getAuthenticationData()
+                ->withServerTransactionId($authenticationId)
+                ->execute();
+        } catch (ApiException $e) {
+            if ($this->isEnvironmentAuthorizationIssue($e)) {
+                $this->markTestSkipped('Permission not enabled to execute authentication result retrieval for this appId/appKey');
+            }
+
+            throw $e;
+        }
+    }
+
+    private function getAuthenticationOrSkip(string $authenticationId): ThreeDSecure
+    {
+        try {
+            return Secure3dService::getAuthentication($authenticationId)
+                ->execute();
+        } catch (ApiException $e) {
+            if ($this->isEnvironmentAuthorizationIssue($e)) {
+                $this->markTestSkipped('Permission not enabled to execute authentication fetch for this appId/appKey');
+            }
+
+            throw $e;
+        }
+    }
+
+    private function findResultCapableAuthentication(PagedResult $authenticationList): ?ThreeDSecure
+    {
+        foreach ($authenticationList->result as $candidateAuthentication) {
+            if ($candidateAuthentication instanceof ThreeDSecure && in_array($candidateAuthentication->status, [
+                Secure3dStatus::AVAILABLE,
+                Secure3dStatus::CHALLENGE_REQUIRED,
+                Secure3dStatus::SUCCESS_AUTHENTICATED,
+                Secure3dStatus::SUCCESS_ATTEMPT_MADE,
+            ], true)) {
+                return $candidateAuthentication;
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -166,12 +272,12 @@ class GpApi3DSecureTest extends TestCase
             ->execute();
 
         $this->assertNotNull($response);
-        $this->assertEquals('SUCCESS', $response->responseCode);
+        $this->assertEquals('00', $response->responseCode);
         $this->assertEquals('VERIFIED', $response->responseMessage);
 
         $response = $this->card->charge($this->amount)->withCurrency($this->currency)->execute();
         $this->assertNotNull($response);
-        $this->assertEquals('SUCCESS', $response->responseCode);
+        $this->assertEquals('00', $response->responseCode);
         $this->assertEquals(TransactionStatus::CAPTURED, $response->responseMessage);
     }
 
@@ -222,7 +328,7 @@ class GpApi3DSecureTest extends TestCase
 
         $response = $this->card->charge($this->amount)->withCurrency($this->currency)->execute();
         $this->assertNotNull($response);
-        $this->assertEquals('SUCCESS', $response->responseCode);
+        $this->assertEquals('00', $response->responseCode);
         $this->assertEquals(TransactionStatus::CAPTURED, $response->responseMessage);
     }
 
@@ -279,7 +385,7 @@ class GpApi3DSecureTest extends TestCase
 
         $response = $this->card->charge($this->amount)->withCurrency($this->currency)->execute();
         $this->assertNotNull($response);
-        $this->assertEquals('SUCCESS', $response->responseCode);
+        $this->assertEquals('00', $response->responseCode);
         $this->assertEquals(TransactionStatus::CAPTURED, $response->responseMessage);
     }
 
@@ -323,6 +429,62 @@ class GpApi3DSecureTest extends TestCase
             ->execute();
 
         $this->assertEquals(Secure3dStatus::CHALLENGE_REQUIRED, $secureEcom->status);
+    }
+
+    public function testPostAuthentications_CreateThenInitiate()
+    {
+        $reference = 'auth-create-' . GenerationUtils::getGuid();
+
+        $createdAuthentication = $this->createAuthentication(
+            GpApi3DSTestCards::CARD_AUTH_SUCCESSFUL_V2_2,
+            $reference
+        );
+
+        $this->assertNotNull($createdAuthentication);
+        $this->assertNotEmpty($createdAuthentication->id);
+        $this->assertEquals($createdAuthentication->id, $createdAuthentication->serverTransactionId);
+        $this->assertEquals($reference, $createdAuthentication->reference);
+        $this->assertEquals(Secure3dStatus::AVAILABLE, $createdAuthentication->status);
+        $this->assertNotNull($createdAuthentication->action);
+        $this->assertNotEmpty($createdAuthentication->merchantId);
+        $this->assertNotEmpty($createdAuthentication->accountName);
+
+        $initiatedAuthentication = $this->initiateAuthentication($createdAuthentication);
+
+        $this->assertNotNull($initiatedAuthentication);
+        $this->assertEquals($createdAuthentication->serverTransactionId, $initiatedAuthentication->serverTransactionId);
+        $this->assertEquals(Secure3dStatus::SUCCESS_AUTHENTICATED, $initiatedAuthentication->status);
+        $this->assertNotNull($initiatedAuthentication->action);
+    }
+
+    public function testGetAuthentications_ListThenGetResultThenFetchById()
+    {
+        $authenticationList = $this->listAuthenticationsOrSkip();
+
+        $this->assertNotNull($authenticationList);
+        $this->assertNotEmpty($authenticationList->result);
+
+        $authentication = $this->findResultCapableAuthentication($authenticationList);
+
+        if ($authentication === null) {
+            $this->markTestSkipped('No authentication with a retrievable result was available in the current sandbox list response');
+        }
+
+        $authenticationId = (string) $authentication->id;
+        $this->assertNotEmpty($authenticationId);
+
+        $authenticationResult = $this->getAuthenticationResultOrSkip($authenticationId);
+
+        $this->assertNotNull($authenticationResult);
+        $this->assertEquals($authenticationId, $authenticationResult->id);
+
+        $fetchedAuthentication = $this->getAuthenticationOrSkip($authenticationId);
+
+        $this->assertNotNull($fetchedAuthentication);
+        $this->assertEquals($authenticationId, $fetchedAuthentication->id);
+        $this->assertNotNull($fetchedAuthentication->action);
+        $this->assertNotEmpty($fetchedAuthentication->merchantId);
+        $this->assertNotEmpty($fetchedAuthentication->accountName);
     }
 
     /**
@@ -378,12 +540,12 @@ class GpApi3DSecureTest extends TestCase
             ->withCurrency($this->currency)
             ->execute();
         $this->assertNotNull($response);
-        $this->assertEquals('SUCCESS', $response->responseCode);
+        $this->assertEquals('00', $response->responseCode);
         $this->assertEquals('VERIFIED', $response->responseMessage);
 
         $response = $tokenizedCard->charge($this->amount)->withCurrency($this->currency)->execute();
         $this->assertNotNull($response);
-        $this->assertEquals('SUCCESS', $response->responseCode);
+        $this->assertEquals('00', $response->responseCode);
         $this->assertEquals(TransactionStatus::CAPTURED, $response->responseMessage);
     }
 
@@ -431,7 +593,7 @@ class GpApi3DSecureTest extends TestCase
 
         $response = $this->card->charge($this->amount)->withCurrency($this->currency)->execute();
         $this->assertNotNull($response);
-        $this->assertEquals('SUCCESS', $response->responseCode);
+        $this->assertEquals('00', $response->responseCode);
         $this->assertEquals(TransactionStatus::CAPTURED, $response->responseMessage);
     }
 
@@ -486,7 +648,7 @@ class GpApi3DSecureTest extends TestCase
 
         $response = $this->card->charge($this->amount)->withCurrency($this->currency)->execute();
         $this->assertNotNull($response);
-        $this->assertEquals('SUCCESS', $response->responseCode);
+        $this->assertEquals('00', $response->responseCode);
         $this->assertEquals(TransactionStatus::CAPTURED, $response->responseMessage);
     }
 
@@ -541,7 +703,7 @@ class GpApi3DSecureTest extends TestCase
         $response = $tokenizedCard->charge($this->amount)->withCurrency($this->currency)->execute();
 
         $this->assertNotNull($response);
-        $this->assertEquals('SUCCESS', $response->responseCode);
+        $this->assertEquals('00', $response->responseCode);
         $this->assertEquals(TransactionStatus::CAPTURED, $response->responseMessage);
         $this->assertNotNull($response->cardBrandTransactionId);
 
@@ -552,7 +714,7 @@ class GpApi3DSecureTest extends TestCase
             ->execute();
 
         $this->assertNotNull($recurringPayment);
-        $this->assertEquals('SUCCESS', $recurringPayment->responseCode);
+        $this->assertEquals('00', $recurringPayment->responseCode);
         $this->assertEquals(TransactionStatus::CAPTURED, $recurringPayment->responseMessage);
         $this->assertNotNull($response->cardBrandTransactionId);
     }
@@ -621,7 +783,7 @@ class GpApi3DSecureTest extends TestCase
 
         $response = $this->card->charge($this->amount)->withCurrency($this->currency)->execute();
         $this->assertNotNull($response);
-        $this->assertEquals('SUCCESS', $response->responseCode);
+        $this->assertEquals('00', $response->responseCode);
         $this->assertEquals(TransactionStatus::CAPTURED, $response->responseMessage);
     }
 
@@ -674,7 +836,7 @@ class GpApi3DSecureTest extends TestCase
         $tokenizedCard->threeDSecure = $secureEcom;
         $response = $tokenizedCard->charge($this->amount)->withCurrency($this->currency)->execute();
         $this->assertNotNull($response);
-        $this->assertEquals('SUCCESS', $response->responseCode);
+        $this->assertEquals('00', $response->responseCode);
         $this->assertEquals(TransactionStatus::CAPTURED, $response->responseMessage);
     }
 
@@ -690,7 +852,7 @@ class GpApi3DSecureTest extends TestCase
             ->execute();
 
         $this->assertNotNull($response);
-        $this->assertEquals('SUCCESS', $response->responseCode);
+        $this->assertEquals('00', $response->responseCode);
         $this->assertEquals(TransactionStatus::CAPTURED, $response->responseMessage);
     }
 
@@ -771,7 +933,7 @@ class GpApi3DSecureTest extends TestCase
 
         $response = $this->card->charge($this->amount)->withCurrency($this->currency)->execute();
         $this->assertNotNull($response);
-        $this->assertEquals('SUCCESS', $response->responseCode);
+        $this->assertEquals('00', $response->responseCode);
         $this->assertEquals(TransactionStatus::CAPTURED, $response->responseMessage);
     }
 

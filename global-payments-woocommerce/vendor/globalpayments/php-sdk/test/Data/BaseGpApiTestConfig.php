@@ -3,17 +3,19 @@
 namespace GlobalPayments\Api\Tests\Data;
 
 use GlobalPayments\Api\Entities\CustomWebProxy;
+use GlobalPayments\Api\Entities\Enums\DataResidency;
 use GlobalPayments\Api\Entities\Enums\Environment;
 use GlobalPayments\Api\Entities\GpApi\AccessTokenInfo;
 use GlobalPayments\Api\ServiceConfigs\Gateways\GpApiConfig;
 use GlobalPayments\Api\ServicesContainer;
-use GlobalPayments\Api\Utils\Logging\Logger;
-use GlobalPayments\Api\Utils\Logging\SampleRequestLogger;
+use GlobalPayments\Api\Utils\Logging\RequestConsoleLogger;
 
 class BaseGpApiTestConfig
 {
-    const APP_ID = '4gPqnGBkppGYvoE5UX9EWQlotTxGUDbs';
-    const APP_KEY = 'FQyJA5VuEQfcji2M';
+    const APP_ID = 'ju9LDqNIxUgY2NeQPgwqc0fLbq3AcJCL';
+    const APP_KEY = 'KYYh3YJwyfzqjWNa';
+    const VISA_APP_ID = ""; #gitleaks:allow
+    const VISA_APP_KEY = ""; #gitleaks:allow
     const APAC_APP_ID = '16Br1RfjChBrsFnWlu7NGIp9LKm2MWWFyGg3SU3UfEl3voA2';
     const APAC_APP_KEY = 'xV9wnRLmi8qPqvMZoxAH9S0RtoQlodCYuvCboVYUohW6DObtcrYL1uj4YOZilKyu';
     const PARTNER_SOLUTION_APP_ID = 'A1feRdMmEB6m0Y1aQ65H0bDi9ZeAEB2t';
@@ -48,10 +50,11 @@ class BaseGpApiTestConfig
 
         $config->challengeNotificationUrl = "https://ensi808o85za.x.pipedream.net/";
         $config->methodNotificationUrl = "https://ensi808o85za.x.pipedream.net/";
+        $config->statusUrl = "https://ensi808o85za.x.pipedream.net/";
         $config->merchantContactUrl = "https://ensi808o85za.x.pipedream.net/";
 
         if (self::$logEnabled) {
-            $config->requestLogger = new SampleRequestLogger(new Logger("logs"));
+            $config->requestLogger = new RequestConsoleLogger();
         }
 
         if (self::$dynamicHeaderEnabled) {
@@ -68,6 +71,21 @@ class BaseGpApiTestConfig
         if (self::$webProxyEnabled) {
             $config->webProxy = new CustomWebProxy('127.0.0.1:8866');
         }
+
+        return $config;
+    }
+
+    public static function gpApiSetupConfigEuCtp(string $channel): GpApiConfig
+    {
+        $config = new GpApiConfig();
+        $config->appId = self::EU_CTP_APP_ID;
+        $config->appKey = self::EU_CTP_APP_KEY;
+        $config->environment = Environment::TEST;
+        $config->dataResidency = DataResidency::EU;
+        $config->channel = $channel;
+        $config->country = 'US';
+        $config->accessTokenInfo = new AccessTokenInfo();
+        $config->accessTokenInfo->transactionProcessingAccountName = 'GPECOM_Transaction_Processing_CNP';
 
         return $config;
     }
